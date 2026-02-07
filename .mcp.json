@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "memo-dsl": {
+      "command": "/Users/robert/claude/memo-mcp/venv/bin/python",
+      "args": ["/Users/robert/claude/memo-mcp/server.py"]
+    }
+  }
+}

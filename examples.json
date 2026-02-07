@@ -1,0 +1,189 @@
+[
+  {
+    "name": "demo-rsa",
+    "file": "demo-rsa.py",
+    "title": "Lewis Game (RSA)",
+    "category": "language",
+    "tags": ["rsa", "pragmatics", "language", "reference game", "speaker", "listener"],
+    "description": "Recursive Rational Speech Act model where a listener reasons about a speaker's choice of utterance to infer the intended referent. Includes model fitting to human data via gradient descent.",
+    "patterns": ["chooses", "thinks", "observes", "given", "Pr", "exp"],
+    "concepts": ["recursive reasoning", "speaker-listener", "bayesian inference", "model fitting", "gradient descent"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nclass U(IntEnum):\n    GREEN  = 0b0001\n    PINK   = 0b0010\n    SQUARE = 0b0100\n    ROUND  = 0b1000\n\nclass R(IntEnum):\n    GREEN_SQUARE = U.GREEN | U.SQUARE\n    GREEN_CIRCLE = U.GREEN | U.ROUND\n    PINK_CIRCLE  = U.PINK  | U.ROUND\n\n@jax.jit\ndef denotes(u, r):\n    return (u & r) != 0\n\n@memo\ndef L[u: U, r: R](beta, t):\n    listener: thinks[\n        speaker: given(r in R, wpp=1),\n        speaker: chooses(u in U, wpp=\n            denotes(u, r) * (1 if t == 0 else exp(beta * L[u, r](beta, t - 1))))\n    ]\n    listener: observes [speaker.u] is u\n    listener: chooses(r in R, wpp=Pr[speaker.r == r])\n    return Pr[listener.r == r]"
+  },
+  {
+    "name": "demo-scalar",
+    "file": "demo-scalar.py",
+    "title": "Scalar Implicature",
+    "category": "language",
+    "tags": ["scalar implicature", "pragmatics", "language", "quantifiers", "some", "all"],
+    "description": "Models how a listener interprets 'some' as 'not all' by reasoning about a speaker who imagines a naive listener. Demonstrates nested reasoning with imagine blocks.",
+    "patterns": ["chooses", "thinks", "observes", "knows", "imagine", "Pr", "E"],
+    "concepts": ["scalar implicature", "pragmatics", "nested reasoning", "imagine blocks", "recursive reasoning"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nNN = 100\nN = np.arange(NN + 1)\nclass U(IntEnum):\n    NONE = 0\n    SOME = 1\n    ALL = 2\n\n@jax.jit\ndef meaning(n, u):\n    return np.array([ n == 0, n > 0, n == NN ])[u]\n\n@memo\ndef scalar[n: N, u: U]():\n    listener: thinks[\n        speaker: chooses(n in N, wpp=1),\n        speaker: chooses(u in U, wpp=imagine[\n            listener: knows(u),\n            listener: chooses(n in N, wpp=meaning(n, u)),\n            Pr[listener.n == n]\n        ])\n    ]\n    listener: observes [speaker.u] is u\n    listener: chooses(n in N, wpp=E[speaker.n == n])\n    return Pr[listener.n == n]"
+  },
+  {
+    "name": "demo-vizzini",
+    "file": "demo-vizzini.py",
+    "title": "The Battle of Wits",
+    "category": "economic_games",
+    "tags": ["game theory", "princess bride", "strategic reasoning", "poison", "cups"],
+    "description": "Models the Battle of Wits from The Princess Bride. Vizzini and Westley recursively reason about each other's cup choice, using wants/EU for forward-looking utility.",
+    "patterns": ["chooses", "thinks", "wants", "EU", "Pr"],
+    "concepts": ["recursive reasoning", "game theory", "forward-looking utility", "wants and EU pattern"],
+    "snippet": "from memo import memo\nfrom enum import IntEnum\n\nclass Cups(IntEnum):\n    Near_Vizzini = 0\n    Near_Westley = 1\n\n@memo\ndef vizzini_pick[cup: Cups](level):\n    vizzini: wants(survive = my_cup != westley.poison)\n    vizzini: thinks[\n        westley: wants(kill= vizzini.my_cup == poison),\n        westley: chooses(poison in Cups, to_maximize=EU[kill]),\n        westley: thinks[\n            vizzini: chooses(\n                my_cup in Cups,\n                wpp=vizzini_pick[my_cup](level - 1)\n                if level > 0 else my_cup == {Cups.Near_Vizzini}\n            )\n        ]\n    ]\n    vizzini: chooses(my_cup in Cups, to_maximize=EU[survive])\n    return Pr[vizzini.my_cup == cup]"
+  },
+  {
+    "name": "demo-fib",
+    "file": "demo-fib.py",
+    "title": "Fibonacci (Compiler Demo)",
+    "category": "language",
+    "tags": ["fibonacci", "recursion", "compiler", "static parameters"],
+    "description": "Demonstrates memo's ability to handle recursive functions with static parameters. Computes Fibonacci numbers using memo's compilation to JAX.",
+    "patterns": [],
+    "concepts": ["recursion", "static parameters", "functools.cache", "compiler internals"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nimport functools\n\nUnit = [0]\n\n@functools.cache\n@memo\ndef fib[a: Unit](n):\n    return 1 if n < 2 else fib[a](n - 1) + fib[a](n - 2)"
+  },
+  {
+    "name": "demo-empowerment",
+    "file": "demo-empowerment.py",
+    "title": "Empowerment (Channel Capacity)",
+    "category": "information_theory",
+    "tags": ["empowerment", "channel capacity", "blahut-arimoto", "information theory", "gridworld"],
+    "description": "Computes empowerment (channel capacity between actions and future states) in a gridworld using the Blahut-Arimoto algorithm implemented in memo.",
+    "patterns": ["chooses", "thinks", "observes", "knows", "imagine", "H", "Pr", "E", "exp"],
+    "concepts": ["empowerment", "channel capacity", "blahut-arimoto", "information theory", "mutual information"],
+    "snippet": "from memo import memo, domain\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nX = np.arange(3)\nY = np.arange(3)\n\n@jax.jit\ndef p_Y_given_X(y, x, z):\n    return np.array([\n        [0.9, 0.05, 0.05],\n        [0.05, 0.9, 0.05],\n        [0.05, 0.05, 0.9]\n    ])[x, y]\n\n@memo\ndef q[x: X, z: X](t):\n    alice: knows(z)\n    alice: chooses(x in X, wpp=imagine[\n        bob: knows(x, z),\n        bob: chooses(y in Y, wpp=p_Y_given_X(y, x, z)),\n        bob: thinks[\n            charlie: knows(y, z),\n            charlie: chooses(x in X, wpp=Q[x, y, z](t - 1) if t > 0 else 1)\n        ],\n        exp(E[bob[H[charlie.x]]])\n    ])\n    return Pr[alice.x == x]\n\n@memo\ndef Q[x: X, y: Y, z: X](t):\n    alice: knows(x, y, z)\n    alice: thinks[\n        bob: knows(z),\n        bob: chooses(x in X, wpp=q[x, z](t)),\n        bob: chooses(y in Y, wpp=p_Y_given_X(y, x, z))\n    ]\n    alice: observes [bob.y] is y\n    return alice[Pr[bob.x == x]]\n\n@memo\ndef C[z: X](t):\n    alice: knows(z)\n    alice: chooses(x in X, wpp=q[x, z](t))\n    alice: chooses(y in Y, wpp=p_Y_given_X(y, x, z))\n    return (H[alice.x] + H[alice.y] - H[alice.x, alice.y]) / log(2)"
+  },
+  {
+    "name": "demo-monty",
+    "file": "demo-monty.ipynb",
+    "title": "Monty Hall Problem",
+    "category": "puzzles",
+    "tags": ["monty hall", "probability", "bayesian", "game show", "doors"],
+    "description": "Models the Monty Hall problem: Alice picks a door, Monty reveals a non-prize door, and we compute Alice's posterior belief about the prize location.",
+    "patterns": ["chooses", "thinks", "observes", "knows", "Pr"],
+    "concepts": ["bayesian inference", "conditional probability", "belief update"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\n\nDoor = np.arange(3)\n\n@memo\ndef monty[pick: Door, reveal: Door, d: Door]():\n    alice: thinks[ monty: chooses(prize in Door, wpp=1) ]\n    alice: knows(pick)\n    alice: thinks[\n        monty: knows(pick),\n        monty: chooses(reveal in Door, wpp=(reveal != prize and reveal != pick))\n    ]\n    alice: observes [monty.reveal] is reveal\n    alice: knows(d)\n    return alice[Pr[monty.prize == d]]"
+  },
+  {
+    "name": "demo-sally-anne",
+    "file": "demo-sally-anne.ipynb",
+    "title": "Sally-Anne (False Belief Test)",
+    "category": "psychology",
+    "tags": ["sally-anne", "false belief", "theory of mind", "developmental psychology"],
+    "description": "Models the Sally-Anne false belief test: a child reasons about Sally's mistaken belief about a marble's location after Anne secretly moves it.",
+    "patterns": ["chooses", "thinks", "observes", "knows", "Pr"],
+    "concepts": ["false belief", "theory of mind", "nested reasoning", "developmental psychology"],
+    "snippet": "from memo import memo\nimport jax.numpy as np\nimport jax\nfrom enum import IntEnum\n\nclass Loc(IntEnum):\n    BOX = 0\n    BASKET = 1\n\nclass Action(IntEnum):\n    ACT_STAY = 0\n    ACT_MOVE = 1\n\n@jax.jit\ndef do(l, a):\n    return np.array([\n        [0, 1],\n        [1, 0]\n    ])[a, l]\n\nclass Obs(IntEnum):\n    OBS_NONE = -1\n    OBS_STAY = Action.ACT_STAY\n    OBS_MOVE = Action.ACT_MOVE\n\n@memo\ndef model[marble_pos_t0: Loc, obs: Obs, where_look: Loc]():\n    child: knows(marble_pos_t0, obs, where_look)\n    child: thinks[\n        sally: knows(marble_pos_t0),\n        sally: thinks[\n            anne: knows(marble_pos_t0),\n            anne: chooses(a in Action, wpp=0.01 if a=={Action.ACT_MOVE} else 0.99),\n            anne: chooses(marble_pos_t1 in Loc, wpp=do(marble_pos_t0, a)==marble_pos_t1),\n            anne: chooses(o in Obs, wpp=1 if o=={Obs.OBS_NONE} or o==a else 0),\n        ],\n        sally: observes [anne.o] is obs,\n        sally: chooses(where_look in Loc, wpp=Pr[anne.marble_pos_t1 == where_look])\n    ]\n    return child[ Pr[sally.where_look == where_look] ]"
+  },
+  {
+    "name": "demo-schelling",
+    "file": "demo-schelling.ipynb",
+    "title": "Schelling Game",
+    "category": "economic_games",
+    "tags": ["schelling", "coordination", "focal point", "game theory"],
+    "description": "Alice and Bob try to meet at a bar without communicating. They recursively reason about each other's likely choice, converging on the more popular bar.",
+    "patterns": ["chooses", "thinks", "Pr"],
+    "concepts": ["coordination game", "focal point", "recursive reasoning", "convergence"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\n\nBar = np.arange(2)\n@jax.jit\ndef prior(b): return np.array([0.55, 0.45])[b]\n\n@memo\ndef alice[b: Bar](depth):\n    alice: thinks[ bob: chooses(b in Bar, wpp=bob[b](depth - 1)) ]\n    alice: chooses(b in Bar, wpp=prior(b) * Pr[b == bob.b])\n    return Pr[alice.b == b]\n\n@memo\ndef bob[b: Bar](depth):\n    bob: thinks[ alice: chooses(b in Bar, wpp=alice[b](depth) if depth > 0 else 1) ]\n    bob: chooses(b in Bar, wpp=prior(b) * Pr[b == alice.b])\n    return Pr[bob.b == b]"
+  },
+  {
+    "name": "demo-ultimatum",
+    "file": "demo-ultimatum.ipynb",
+    "title": "Ultimatum Game",
+    "category": "economic_games",
+    "tags": ["ultimatum", "bargaining", "fairness", "game theory", "economics"],
+    "description": "Models the ultimatum game: an offerer proposes a split, and a receiver accepts or rejects. Shows that rational agents offer near-zero, unlike real humans who offer ~50%.",
+    "patterns": ["chooses", "knows", "imagine", "Pr", "E", "exp"],
+    "concepts": ["game theory", "bargaining", "fairness", "softmax decision making"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nProposal = np.linspace(0, 1, 100)\nclass Decision(IntEnum):\n    Accept = 0\n    Reject = 1\n\n@jax.jit\ndef payout_offerer(prop, dec):\n    return np.array([\n        1 - prop,\n        0\n    ])[dec]\n\n@jax.jit\ndef payout_receiver(prop, dec):\n    return np.array([\n        prop,\n        0\n    ])[dec]\n\n@memo\ndef receiver[prop: Proposal, dec: Decision]():\n    receiver: knows(prop)\n    receiver: chooses(dec in Decision, wpp=exp(50.0 * payout_receiver(prop, dec)))\n    return Pr[ receiver.dec == dec ]\n\n@memo\ndef offerer[prop: Proposal]():\n    offerer: chooses(prop in Proposal, wpp=exp(50.0 * imagine[\n        receiver: knows(prop),\n        receiver: chooses(dec in Decision, wpp=receiver[prop, dec]()),\n        E[ payout_offerer(prop, receiver.dec) ]\n    ]))\n    return Pr[ offerer.prop == prop ]"
+  },
+  {
+    "name": "demo-newcomb",
+    "file": "demo-newcomb.ipynb",
+    "title": "Newcomb's Problem",
+    "category": "puzzles",
+    "tags": ["newcomb", "decision theory", "free will", "determinism", "paradox"],
+    "description": "Models two resolutions of Newcomb's paradox: the 'fearful' interpretation (take box B only) and the 'realist' interpretation (take both boxes), following Wolpert & Benford.",
+    "patterns": ["chooses", "thinks", "knows", "imagine", "Pr", "E", "to_maximize"],
+    "concepts": ["decision theory", "newcomb's paradox", "omniscient adversary", "game formalization"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nclass Pick(IntEnum):\n    AB = 0\n    B = 1\n\n@jax.jit\ndef payout(g, y):\n    return np.array([\n        [1e3 + 000, 000],\n        [1e3 + 1e6, 1e6]\n    ])[g, y]\n\n@memo\ndef fearful[p: Pick]():\n    alice: chooses(y in Pick, to_maximize=imagine[\n        god: knows(y),\n        god: chooses(g in Pick, to_maximize=(g == y)),\n        E[payout(god.g, y)]\n    ])\n    return Pr[alice.y == p]\n\n@memo\ndef realist[p: Pick]():\n    alice: thinks[ god: chooses(g in Pick, wpp=1) ]\n    alice: chooses(y in Pick, to_maximize=E[payout(god.g, y)])\n    return Pr[alice.y == p]"
+  },
+  {
+    "name": "demo-eig",
+    "file": "demo-eig.ipynb",
+    "title": "Expected Information Gain",
+    "category": "information_theory",
+    "tags": ["eig", "information gain", "entropy", "question asking", "experiment design"],
+    "description": "Computes the expected information gain of yes/no questions about two dice rolls. Uses entropy and snapshots_self_as to model the value of future observations.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "imagine", "H", "E", "snapshots_self_as"],
+    "concepts": ["expected information gain", "entropy", "experiment design", "question asking", "snapshots"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\n\nis_prime  = np.array([0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0])\nis_square = np.array([1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0])\nis_pow_2  = np.array([0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0])\nQs = [\n    lambda n: n == 7,\n    lambda n: n > 6,\n    lambda n: n % 2 == 0,\n    lambda n: is_prime[n],\n]\n\nN = np.arange(1, 6 + 1)\nQ = np.arange(len(Qs))\nA = np.array([0, 1])\n\n@jax.jit\ndef respond(q, a, n):\n    return np.array([q_(n) for q_ in Qs])[q] == a\n\n@memo\ndef eig[q: Q]():\n    alice: knows(q)\n    alice: thinks[\n        bob: chooses(n_red in N, wpp=1),\n        bob: chooses(n_blu in N, wpp=1),\n        bob: knows(q),\n        bob: chooses(a in A, wpp=respond(q, a, n_red + n_blu))\n    ]\n    alice: snapshots_self_as(future_self)\n    return alice[ imagine[\n        future_self: observes [bob.a] is bob.a,\n        H[bob.n_red, bob.n_blu] - E[future_self[ H[bob.n_red, bob.n_blu] ]]\n    ] ]"
+  },
+  {
+    "name": "demo-dining-cryptographers",
+    "file": "demo-dining-cryptographers.ipynb",
+    "title": "Dining Cryptographers",
+    "category": "puzzles",
+    "tags": ["cryptography", "privacy", "anonymous", "xor", "protocol"],
+    "description": "Models the dining cryptographers protocol: three cryptographers determine if the NSA paid for dinner without revealing which cryptographer paid, using coin flips and XOR.",
+    "patterns": ["chooses", "thinks", "observes", "knows", "Pr"],
+    "concepts": ["anonymous communication", "cryptographic protocol", "privacy", "xor"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nclass Bit(IntEnum):\n    NOT_PAID = 0\n    PAID = 1\n\nclass Who(IntEnum):\n    A_PAID = 0\n    B_PAID = 1\n    C_PAID = 2\n    NSA_PAID = 3\n\n@memo\ndef model[a_: Bit, b_: Bit, bx: Bit, cx: Bit, w: Who]():\n    a: knows(a_, w)\n    a: thinks[\n        world: chooses(w in Who, wpp=(w != 0)),\n        b: chooses(b_ in Bit, wpp=1),\n        c: chooses(c_ in Bit, wpp=1),\n        b: knows(world.w, c.c_),\n        c: knows(world.w, a_),\n        b: chooses(bx in Bit, wpp=(b_ ^ c.c_ ^ (world.w == 1) == bx)),\n        c: chooses(cx in Bit, wpp=(c_ ^   a_ ^ (world.w == 2) == cx)),\n    ]\n    a: observes [b.b_] is b_\n    a: observes [b.bx] is bx\n    a: observes [c.cx] is cx\n    return a[Pr[world.w == w]]"
+  },
+  {
+    "name": "demo-cheryl",
+    "file": "demo-cheryl.ipynb",
+    "title": "Cheryl's Birthday",
+    "category": "puzzles",
+    "tags": ["logic puzzle", "common knowledge", "epistemic reasoning", "birthday"],
+    "description": "Solves a variant of Cheryl's Birthday puzzle using memo. Models sequential utterances where Alice and Bob progressively reveal what they know and don't know about a hidden date.",
+    "patterns": ["chooses", "thinks", "observes", "Var", "Pr"],
+    "concepts": ["epistemic reasoning", "common knowledge", "logic puzzles", "progressive revelation"],
+    "snippet": "from memo import memo, domain\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\n\nclass Month(IntEnum):\n    February = 0\n    March = 1\n    April = 2\n\nDay = np.arange(1, 31 + 1)\n\nclass U(IntEnum):\n    DUNNO = 0\n    KNOWN = 1\n\n@jax.jit\ndef possible(m, d):\n    return d <= np.array([29, 31, 30])[m]\n\n@memo\ndef a_u1[m: Month, u: U]():\n    a: thinks[\n        c: chooses(m in Month, wpp=1),\n        c: chooses(d in Day, wpp=possible(m, d))\n    ]\n    a: observes [c.m] is m\n    return u == a[Var[c.d] == 0]\n\n@memo\ndef a_u2[m: Month, u: U]():\n    a: thinks[\n        c: chooses(m in Month, wpp=1),\n        c: chooses(d in Day, wpp=possible(m, d)),\n        b: thinks[\n            c: chooses(m in Month, wpp=1),\n            c: chooses(d in Day, wpp=possible(m, d))\n        ],\n        b: observes [c.d] is c.d\n    ]\n    a: observes [c.m] is m\n    return u == a[Pr[b[Var[c.m] == 0]] > 0]"
+  },
+  {
+    "name": "demo-risk-aversion",
+    "file": "demo-risk-aversion.ipynb",
+    "title": "Risk Aversion",
+    "category": "economic_games",
+    "tags": ["risk aversion", "decision theory", "variance", "utility", "terry tao"],
+    "description": "Models risk-averse decision making using 'value at risk' (sqrt(Var) - E). Shows that adding external shock can flip the preferred action from safe to bold.",
+    "patterns": ["chooses", "imagine", "Pr", "Var", "E", "to_minimize"],
+    "concepts": ["risk aversion", "value at risk", "decision under uncertainty", "variance"],
+    "snippet": "from memo import memo\nimport jax.numpy as np\nimport jax\nfrom enum import IntEnum\nfrom jax.scipy.stats.norm import pdf as normpdf\nnormpdf = jax.jit(normpdf)\n\nclass Action(IntEnum):\n    Safe = 0\n    Bold = 1\n\nOutcome = np.linspace(-10, 10, 101)\n\n@jax.jit\ndef utility(a, o):\n    means = np.array([5, 9])\n    stdvs = np.array([3, 10])\n    return means[a] + stdvs[a] * o\n\n@memo\ndef model[a: Action]():\n    terry: chooses(a in Action, to_minimize=imagine[\n        world: chooses(o in Outcome, wpp=normpdf(o)),\n        Var[utility(a, world.o)]**0.5 - E[utility(a, world.o)]\n    ])\n    return Pr[terry.a == a]"
+  },
+  {
+    "name": "demo-polarization",
+    "file": "demo-polarization.ipynb",
+    "title": "Belief Polarization",
+    "category": "psychology",
+    "tags": ["polarization", "belief update", "bayesian", "economics", "cognitive bias"],
+    "description": "Models how two economists with different priors can become more polarized after observing the same evidence, following Jern et al. (2009).",
+    "patterns": ["chooses", "thinks", "observes", "knows", "Pr"],
+    "concepts": ["belief polarization", "bayesian inference", "prior beliefs", "same evidence different conclusions"],
+    "snippet": "from enum import IntEnum\nfrom memo import memo\nimport jax.numpy as np\n\nclass Opinion_of_Bill(IntEnum):\n    BAD_POLICY = 0\n    GOOD_POLICY = 1\n\nclass Bill_Outcome(IntEnum):\n    NO_SPENDING = 0\n    SPENDING_INCREASE = 1\n\nclass Study_Result(IntEnum):\n    NO_SPENDING = 0\n    SPENDING_INCREASE = 1\n\nclass Optimal_Economic_Policy(IntEnum):\n    FISCALLY_CONSERVATIVE = 0\n    FISCALLY_LIBERAL = 1\n\nclass Economist(IntEnum):\n    ALICE = 0\n    BOB = 1\n\n@memo\ndef posterior[e: Economist, d: Study_Result]():\n    economist: knows(e)\n    economist: thinks[\n        world: knows(e),\n        world: chooses(v1 in Optimal_Economic_Policy, wpp=(\n            (0.9 if v1 == {Optimal_Economic_Policy.FISCALLY_LIBERAL} else 0.1)\n                if e == {Economist.ALICE} else\n            (0.1 if v1 == {Optimal_Economic_Policy.FISCALLY_LIBERAL} else 0.9)\n        )),\n        world: chooses(v2 in Bill_Outcome, wpp=1),\n        world: chooses(d in Study_Result, wpp=0.9 if d == v2 else 0.1),\n        world: chooses(h in Opinion_of_Bill, wpp=(\n            0.5 if v2 == {Bill_Outcome.NO_SPENDING} else (\n                (0.1 if h == {Opinion_of_Bill.GOOD_POLICY} else 0.9)\n                    if v1 == {Optimal_Economic_Policy.FISCALLY_CONSERVATIVE} else\n                (0.9 if h == {Opinion_of_Bill.GOOD_POLICY} else 0.1)\n            )\n        ))\n    ]\n    economist: observes [world.d] is d\n    return economist[Pr[world.h == 1]]"
+  },
+  {
+    "name": "demo-pomdp",
+    "file": "demo-pomdp.ipynb",
+    "title": "POMDP (Crying Baby)",
+    "category": "planning",
+    "tags": ["pomdp", "partially observable", "planning", "crying baby", "belief space"],
+    "description": "Solves the Crying Baby POMDP via belief-space value iteration. An agent decides whether to feed, sing, or ignore a baby based on partial observations (crying/quiet).",
+    "patterns": ["chooses", "thinks", "observes", "knows", "imagine", "E", "snapshots_self_as", "to_maximize", "exp"],
+    "concepts": ["POMDP", "belief-space planning", "partial observability", "value iteration", "snapshots"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom functools import cache\nfrom enum import IntEnum\n\nclass S(IntEnum): Hungry = 0; Sated = 1\nclass A(IntEnum): Feed = 0; Sing = 1; Ignore = 2\nclass O(IntEnum): Crying = 0; Quiet = 1\n\nB = np.linspace(0, 1, 50)\n\n@jax.jit\ndef get_belief(b, s):\n    return np.array([b, 1 - b])[s]\n\n@jax.jit\ndef Tr(s, a, s_):\n    z = np.array([\n        [0.0, 1.0, 1.0],\n        [0.0, 0.1, 0.1]\n    ])[s, a]\n    return np.array([z, 1 - z])[s_]\n\n@jax.jit\ndef Obs(o, s, a):\n    z = np.array([\n        [0.8, 0.9, 0.8],\n        [0.1, 0.0, 0.1]\n    ])[s, a]\n    return np.array([z, 1 - z])[o]\n\n@jax.jit\ndef R(s, a):\n    return (\n        np.array([-10, 0])[s] +\n        np.array([-5, -0.5, 0])[a]\n    )\n\n@memo(cache=True)\ndef Q_pomdp[b: B, a: A](t):\n    alice: knows(b, a)\n    alice: thinks[\n        env: knows(b, a),\n        env: chooses(s in S, wpp=get_belief(b, s)),\n        env: chooses(s_ in S, wpp=Tr(s, a, s_)),\n        env: chooses(o in O, wpp=Obs(o, s_, a))\n    ]\n    alice: snapshots_self_as(future_alice)\n    return alice[ E[R(env.s, a)] + (0.0 if t <= 0 else 0.9 * imagine[\n        future_alice: observes [env.o] is env.o,\n        future_alice: chooses(b_ in B, wpp=exp(-100.0 * abs(E[env.s_ == 0] - b_))),\n        future_alice: chooses(a_ in A, to_maximize=Q_pomdp[b_, a_](t - 1)),\n        E[ future_alice[ Q_pomdp[b_, a_](t - 1) ] ]\n    ]) ]"
+  },
+  {
+    "name": "demo-mdp",
+    "file": "demo-mdp.ipynb",
+    "title": "MDP (Gridworld Planning)",
+    "category": "planning",
+    "tags": ["mdp", "gridworld", "planning", "inverse planning", "goal inference"],
+    "description": "Q-value iteration in a gridworld MDP, plus inverse planning that infers an agent's goal from observed actions.",
+    "patterns": ["chooses", "thinks", "observes", "knows", "given", "E", "exp", "to_maximize"],
+    "concepts": ["MDP", "Q-value iteration", "inverse planning", "goal inference", "gridworld"],
+    "snippet": "from functools import cache\nimport jax\nimport jax.numpy as np\nfrom memo import memo\n\nH = 5\nW = 5\nS = np.arange(H * W)\nG = np.array([0, H * W - 1])\nA_dom = np.array([0, 1, 2, 3])\ncoord_actions = np.array([[-1, 0], [+1, 0], [0, -1], [0, +1]])\nmaze = np.zeros(H * W)\n\n@jax.jit\ndef Tr(s, a, s_):\n    x, y = s % W, s // W\n    next_coords = np.array([x, y]) + coord_actions[a]\n    next_state = (\n        + 1 * np.clip(next_coords[0], 0, W - 1)\n        + W * np.clip(next_coords[1], 0, H - 1)\n    )\n    return (\n        + 1.0 * ((maze[next_state] == 0) & (next_state == s_))\n        + 1.0 * ((maze[next_state] == 1) & (s == s_))\n    )\n\n@jax.jit\ndef R(s, a, g):\n    return 1.0 * (s == g) - 0.1\n\n@jax.jit\ndef is_terminating(s, g):\n    return s == g\n\n@cache\n@memo\ndef Q_mdp[s: S, a: A_dom, g: G](t):\n    alice: knows(s, a, g)\n    alice: given(s_ in S, wpp=Tr(s, a, s_))\n    alice: chooses(a_ in A_dom, to_maximize=0.0 if t < 0 else Q_mdp[s_, a_, g](t - 1))\n    return E[\n        R(s, a, g) + (0.0 if t < 0 else\n                      0.0 if is_terminating(s, g) else\n                      1.0 * Q_mdp[alice.s_, alice.a_, g](t - 1))\n    ]\n\n@memo\ndef invplan[s: S, a: A_dom, g: G](t):\n    observer: knows(a, s, g)\n    observer: thinks[\n        alice: chooses(g in G, wpp=1),\n        alice: knows(s),\n        alice: chooses(a in A_dom, wpp=exp(2 * Q_mdp[s, a, g](t))),\n    ]\n    observer: observes [alice.a] is a\n    return observer[E[alice.g == g]]"
+  }
+]
