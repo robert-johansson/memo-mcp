@@ -68,7 +68,6 @@ Any MCP-compatible client can connect using the stdio transport.
 server.py        -- MCP server (all 10 tools)
 examples.json    -- Search index for demo programs
 memo/            -- Git submodule: the memo DSL, Handbook, and 35+ demos
-examples/        -- Example memo models (social anxiety, panic disorder)
 ```
 
 ## Links
