@@ -21,9 +21,12 @@ memo is a DSL that compiles recursive multi-agent reasoning models to JAX array 
 
 ## Installation
 
+Install memo-mcp once in a convenient location. It runs as a standalone service — your projects reference it via config, they don't need to embed it.
+
 Requires Python 3.12+ (tested with 3.14).
 
 ```bash
+# Pick a location, e.g. ~/tools
 git clone --recurse-submodules https://github.com/robert-johansson/memo-mcp.git
 cd memo-mcp
 
@@ -39,7 +42,7 @@ git submodule update --init
 
 ## Usage with Claude Code
 
-Add to your Claude Code MCP config (`~/.claude/mcp.json` or project `.mcp.json`):
+Add to your project's `.mcp.json` (or `~/.claude/mcp.json` for global access), pointing to your memo-mcp installation:
 
 ```json
 {
@@ -52,15 +55,15 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json` or project `.mcp.json`)
 }
 ```
 
+Your project is a separate repo with its own code and data. The MCP server runs alongside as a tool that Claude Code can call — no need to add memo-mcp as a submodule or dependency of your project.
+
 ## Usage with other MCP clients
 
-The server communicates over stdio:
+The server communicates over stdio and works with any MCP-compatible client:
 
 ```bash
 venv/bin/python server.py
 ```
-
-Any MCP-compatible client can connect using the stdio transport.
 
 ## Repository layout
 
