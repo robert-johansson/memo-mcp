@@ -110,7 +110,15 @@ def _format_memo_error(exc: Exception) -> str:
             for note in notes:
                 parts.append(f"    {note}")
     else:
-        parts.append(f"{type_name}: {exc}")
+        msg = str(exc).strip()
+        if msg:
+            parts.append(f"{type_name}: {msg}")
+        else:
+            # Empty exception (e.g. bare raise Exception() from memo parser).
+            # Include the traceback so there's something to debug with.
+            import traceback
+            parts.append(f"{type_name} (no message). Traceback:")
+            parts.append(traceback.format_exc())
         notes = getattr(exc, "__notes__", [])
         if notes:
             for note in notes:
