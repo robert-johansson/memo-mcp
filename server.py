@@ -1,5 +1,6 @@
 """memo DSL MCP Server — helps LLMs write correct memo code."""
 
+import ast
 import json
 import os
 import re
@@ -127,19 +128,12 @@ def _format_memo_error(exc: Exception) -> str:
     return "\n".join(parts)
 
 
-# ===== Tool 2: run_memo ===================================================
+# ---------------------------------------------------------------------------
+# Shared subprocess runner
+# ---------------------------------------------------------------------------
 
-@mcp.tool()
-def run_memo(code: str, timeout: int = 30) -> str:
-    """Execute memo code in an isolated subprocess and return output.
-
-    Runs a complete Python script with @memo functions. Uses a subprocess
-    for isolation so JAX OOM or hangs won't crash the server.
-
-    Args:
-        code: Complete Python script with imports, domains, @memo functions, and execution code.
-        timeout: Maximum execution time in seconds (default 30).
-    """
+def _run_memo_subprocess(code: str, timeout: int = 30) -> str:
+    """Run memo code in an isolated subprocess and return formatted output."""
     tmp_path = None
     try:
         fd, tmp_path = tempfile.mkstemp(suffix=".py", prefix="memo_run_")
@@ -174,6 +168,22 @@ def run_memo(code: str, timeout: int = 30) -> str:
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# ===== Tool 2: run_memo ===================================================
+
+@mcp.tool()
+def run_memo(code: str, timeout: int = 30) -> str:
+    """Execute memo code in an isolated subprocess and return output.
+
+    Runs a complete Python script with @memo functions. Uses a subprocess
+    for isolation so JAX OOM or hangs won't crash the server.
+
+    Args:
+        code: Complete Python script with imports, domains, @memo functions, and execution code.
+        timeout: Maximum execution time in seconds (default 30).
+    """
+    return _run_memo_subprocess(code, timeout)
 
 
 # ===== Tool 3: search_examples ============================================
@@ -704,6 +714,501 @@ def _inject_debug_flag(code: str) -> str:
     code = re.sub(r"@memo\(([^)]*)\)", _replace_memo_with_args, code)
     # Handle bare @memo (not followed by '(')
     code = re.sub(r"@memo\s*\n", "@memo(debug_print_compiled=True)\n", code)
+    return code
+
+
+# ===== Tool 7: explain_memo ================================================
+
+@mcp.tool()
+def explain_memo(code: str) -> str:
+    """Parse memo code and return a structured plain-English description of the model's components.
+
+    Statically analyzes the code (no execution) to extract:
+    - @memo function signatures (axes, domains, parameters)
+    - Agent declarations and their statements (chooses, thinks, observes, wants, knows, given)
+    - Recursive reasoning structure (thinks[] nesting, self-referential calls)
+    - Docstrings and return expressions
+
+    Args:
+        code: Complete Python script with imports, domains, and @memo functions.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return f"Syntax error: {e}"
+
+    # Collect domain definitions (IntEnum classes and array domains)
+    domains = _extract_domains(tree)
+
+    # Find @memo-decorated functions
+    memo_funcs = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and _has_memo_decorator(node)
+    ]
+
+    if not memo_funcs:
+        return "No @memo functions found in the code."
+
+    memo_func_names = {f.name for f in memo_funcs}
+    parts = []
+
+    for func in memo_funcs:
+        parts.append(_explain_memo_function(func, domains, memo_func_names))
+
+    # Domain summary
+    if domains:
+        domain_lines = ["Domains:"]
+        for name, values in domains.items():
+            if values:
+                domain_lines.append(f"  {name}: {', '.join(values)}")
+            else:
+                domain_lines.append(f"  {name}")
+        parts.insert(0, "\n".join(domain_lines) + "\n")
+
+    return "\n".join(parts)
+
+
+def _extract_domains(tree: ast.Module) -> dict[str, list[str]]:
+    """Extract domain definitions: IntEnum classes and array-based domains."""
+    domains: dict[str, list[str]] = {}
+    for node in ast.iter_child_nodes(tree):
+        # IntEnum classes
+        if isinstance(node, ast.ClassDef):
+            bases = [_unparse_node(b) for b in node.bases]
+            if "IntEnum" in bases:
+                members = []
+                for item in node.body:
+                    if isinstance(item, ast.Assign):
+                        for target in item.targets:
+                            if isinstance(target, ast.Name):
+                                members.append(target.id)
+                    elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                        members.append(item.target.id)
+                domains[node.name] = members
+        # Simple array domains: X = np.arange(N) or similar assignments
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name):
+                src = _unparse_node(node.value)
+                if "arange" in src or "array" in src or "domain(" in src:
+                    domains[target.id] = []
+    return domains
+
+
+def _has_memo_decorator(node: ast.FunctionDef) -> bool:
+    """Check if a function has @memo decorator."""
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Name) and dec.id == "memo":
+            return True
+        if isinstance(dec, ast.Call):
+            func = dec.func
+            if isinstance(func, ast.Name) and func.id == "memo":
+                return True
+    return False
+
+
+def _explain_memo_function(
+    func: ast.FunctionDef,
+    domains: dict[str, list[str]],
+    memo_func_names: set[str],
+) -> str:
+    """Generate explanation for a single @memo function."""
+    lines = []
+
+    # Function signature with type params
+    name = func.name
+    type_params = _extract_type_params(func)
+    params = _extract_params(func)
+    docstring = ast.get_docstring(func)
+
+    # Header
+    sig_parts = []
+    if type_params:
+        axes_str = ", ".join(f"{ax}: {dom}" for ax, dom in type_params)
+        sig_parts.append(f"{name}[{axes_str}]")
+    else:
+        sig_parts.append(name)
+    if params:
+        sig_parts_str = sig_parts[0] + f"({', '.join(params)})"
+    else:
+        sig_parts_str = sig_parts[0] + "()"
+    lines.append(f"Model: {sig_parts_str}")
+
+    # Axes with domain values
+    if type_params:
+        for ax, dom in type_params:
+            if dom in domains and domains[dom]:
+                lines.append(f"  Axis: {ax} over {dom} ({', '.join(domains[dom])})")
+            else:
+                lines.append(f"  Axis: {ax} over {dom}")
+
+    # Parameters
+    if params:
+        lines.append(f"  Parameters: {', '.join(params)}")
+
+    # Docstring
+    if docstring:
+        # Take first line of docstring as summary
+        summary = docstring.strip().split("\n")[0]
+        lines.append(f"  Purpose: {summary}")
+
+    # Extract agents and their statements
+    agents = _extract_agents(func.body, memo_func_names)
+    if agents:
+        lines.append("")
+        lines.append("  Agents:")
+        for agent_name, statements in agents.items():
+            lines.append(f"    {agent_name}:")
+            for stmt in statements:
+                lines.append(f"      - {stmt}")
+
+    # Detect recursive calls
+    recursive_calls = _find_recursive_calls(func.body, name, memo_func_names)
+    if recursive_calls:
+        lines.append("")
+        for call_desc in recursive_calls:
+            lines.append(f"  Recursive: {call_desc}")
+
+    # Return expression
+    return_expr = _extract_return(func.body)
+    if return_expr:
+        lines.append(f"  Returns: {return_expr}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _extract_type_params(func: ast.FunctionDef) -> list[tuple[str, str]]:
+    """Extract type parameters from function (e.g., def f[x: X, y: Y])."""
+    params = []
+    # Python 3.12+ type_params attribute
+    for tp in getattr(func, "type_params", []):
+        if hasattr(tp, "name") and hasattr(tp, "bound") and tp.bound is not None:
+            params.append((tp.name, _unparse_node(tp.bound)))
+        elif hasattr(tp, "name"):
+            params.append((tp.name, "?"))
+    return params
+
+
+def _extract_params(func: ast.FunctionDef) -> list[str]:
+    """Extract regular function parameters (excluding self)."""
+    params = []
+    for arg in func.args.args:
+        if arg.arg != "self":
+            params.append(arg.arg)
+    return params
+
+
+def _extract_agents(
+    body: list[ast.stmt],
+    memo_func_names: set[str],
+    depth: int = 0,
+) -> dict[str, list[str]]:
+    """Extract agent declarations and their statements from a function body.
+
+    In memo, agents are declared via annotated assignments like:
+        agent_name: statement(...)
+    or
+        agent_name: thinks[...]
+    """
+    agents: dict[str, list[str]] = {}
+
+    for node in body:
+        if not isinstance(node, ast.AnnAssign):
+            continue
+        if not isinstance(node.target, ast.Name):
+            continue
+
+        agent_name = node.target.id
+        annotation = node.annotation
+
+        if agent_name not in agents:
+            agents[agent_name] = []
+
+        stmt_desc = _describe_statement(annotation, memo_func_names, depth)
+        if stmt_desc:
+            agents[agent_name].append(stmt_desc)
+
+    return agents
+
+
+def _describe_statement(
+    node: ast.expr,
+    memo_func_names: set[str],
+    depth: int,
+) -> str:
+    """Describe a single agent statement node."""
+    # Function call: chooses(...), knows(...), wants(...), given(...)
+    if isinstance(node, ast.Call):
+        func_name = _unparse_node(node.func)
+
+        if func_name == "chooses":
+            return _describe_chooses(node)
+        elif func_name == "knows":
+            args = [_unparse_node(a) for a in node.args]
+            return f"knows: {', '.join(args)}"
+        elif func_name == "wants":
+            # wants(name = expr)
+            if node.keywords:
+                kw = node.keywords[0]
+                return f"wants: {kw.arg} = {_unparse_node(kw.value)}"
+            return "wants: (utility)"
+        elif func_name == "given":
+            return _describe_chooses(node, verb="given")
+        elif func_name == "observes":
+            args = [_unparse_node(a) for a in node.args]
+            return f"observes: {', '.join(args)}"
+        else:
+            return f"{func_name}({', '.join(_unparse_node(a) for a in node.args)})"
+
+    # Subscript: thinks[...], observes[...] is ...
+    if isinstance(node, ast.Subscript):
+        func_name = _unparse_node(node.value)
+
+        if func_name == "thinks":
+            return _describe_thinks(node, memo_func_names, depth)
+        elif func_name == "observes":
+            return f"observes: {_unparse_node(node.slice)}"
+
+    # Compare node: observes [...] is ...
+    if isinstance(node, ast.Compare):
+        left_src = _unparse_node(node.left)
+        if "observes" in left_src:
+            comparators = [_unparse_node(c) for c in node.comparators]
+            return f"observes {left_src.replace('observes', '').strip()} is {', '.join(comparators)}"
+        return _unparse_node(node)
+
+    return _unparse_node(node)
+
+
+def _describe_chooses(node: ast.Call, verb: str = "chooses") -> str:
+    """Describe a chooses() or given() call."""
+    # Parse positional args for "var in Domain" patterns
+    choices = []
+    extras = []
+    for arg in node.args:
+        src = _unparse_node(arg)
+        choices.append(src)
+
+    for kw in node.keywords:
+        if kw.arg == "wpp":
+            extras.append(f"weighted by {_summarize_expr(_unparse_node(kw.value))}")
+        elif kw.arg == "to_maximize":
+            extras.append(f"to maximize {_unparse_node(kw.value)}")
+
+    desc = f"{verb}: {', '.join(choices)}" if choices else verb
+    if extras:
+        desc += f" ({'; '.join(extras)})"
+    return desc
+
+
+def _describe_thinks(
+    node: ast.Subscript,
+    memo_func_names: set[str],
+    depth: int,
+) -> str:
+    """Describe a thinks[...] block, recursing into nested agent statements."""
+    # The slice contains the nested agent statements
+    inner = node.slice
+
+    # Collect nested agent names
+    nested_agents: dict[str, list[str]] = {}
+
+    # thinks[] body is typically a Tuple of statements at the AST level
+    stmts = []
+    if isinstance(inner, ast.Tuple):
+        stmts = inner.elts
+    else:
+        stmts = [inner]
+
+    for stmt in stmts:
+        # Inside thinks[], Python parses "agent: stmt" as Slice(lower=agent, upper=stmt)
+        if isinstance(stmt, ast.Slice) and isinstance(stmt.lower, ast.Name):
+            agent_name = stmt.lower.id
+            if agent_name not in nested_agents:
+                nested_agents[agent_name] = []
+            if stmt.upper is not None:
+                desc = _describe_statement(stmt.upper, memo_func_names, depth + 1)
+                if desc:
+                    nested_agents[agent_name].append(desc)
+        # Also handle AnnAssign in case of different parse contexts
+        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            agent_name = stmt.target.id
+            if agent_name not in nested_agents:
+                nested_agents[agent_name] = []
+            desc = _describe_statement(stmt.annotation, memo_func_names, depth + 1)
+            if desc:
+                nested_agents[agent_name].append(desc)
+
+    if nested_agents:
+        parts = []
+        for ag, stmts_list in nested_agents.items():
+            for s in stmts_list:
+                parts.append(f"{ag}: {s}")
+        return f"thinks about: [{'; '.join(parts)}]"
+
+    return f"thinks: {_unparse_node(inner)}"
+
+
+def _find_recursive_calls(
+    body: list[ast.stmt],
+    func_name: str,
+    memo_func_names: set[str],
+) -> list[str]:
+    """Find calls to memo functions (including self-recursive calls) in the body."""
+    calls = []
+    for node in ast.walk(ast.Module(body=body, type_ignores=[])):
+        if isinstance(node, ast.Subscript):
+            val = node.value
+            if isinstance(val, ast.Name) and val.id in memo_func_names:
+                target = val.id
+                args_str = _unparse_node(node.slice)
+                if target == func_name:
+                    calls.append(f"{func_name} calls itself (self-recursive) with [{args_str}]")
+                else:
+                    calls.append(f"calls {target}[{args_str}]")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in memo_func_names and func.id != func_name:
+                args = [_unparse_node(a) for a in node.args]
+                calls.append(f"calls {func.id}({', '.join(args)})")
+    # Deduplicate
+    return list(dict.fromkeys(calls))
+
+
+def _extract_return(body: list[ast.stmt]) -> str | None:
+    """Extract the return expression from a function body."""
+    for node in body:
+        if isinstance(node, ast.Return) and node.value is not None:
+            return _unparse_node(node.value)
+    return None
+
+
+def _summarize_expr(expr: str) -> str:
+    """Shorten long expressions for display."""
+    if len(expr) > 80:
+        return expr[:77] + "..."
+    return expr
+
+
+def _unparse_node(node: ast.expr) -> str:
+    """Convert an AST node back to source code."""
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return "<?>"
+
+
+# ===== Tool 8: narrate_results =============================================
+
+@mcp.tool()
+def narrate_results(code: str, call: str, timeout: int = 30) -> str:
+    """Run a specific memo function call and return results as a labeled human-readable table.
+
+    Takes model code (imports, domains, @memo definitions) and a function call,
+    injects print_table=True for labeled output with domain value names, and
+    runs it in an isolated subprocess.
+
+    Args:
+        code: Complete Python script with imports, domains, and @memo functions (no execution code).
+        call: The function call to execute, e.g. "anxiety_level(0.5, 3)".
+        timeout: Maximum execution time in seconds (default 30).
+    """
+    # Inject print_table=True into the call
+    call = call.strip().rstrip(";")
+    if call.endswith(")"):
+        # Insert print_table=True before the closing paren
+        inner = call[:-1].rstrip()
+        if inner.endswith("("):
+            # No args: func() -> func(print_table=True)
+            modified_call = inner + "print_table=True)"
+        else:
+            modified_call = inner + ", print_table=True)"
+    else:
+        modified_call = call
+
+    full_code = code.rstrip() + "\n\n" + modified_call + "\n"
+    return _run_memo_subprocess(full_code, timeout)
+
+
+# ===== Tool 9: compare_scenarios ===========================================
+
+@mcp.tool()
+def compare_scenarios(
+    code: str,
+    call_a: str,
+    call_b: str,
+    label_a: str = "Scenario A",
+    label_b: str = "Scenario B",
+    timeout: int = 30,
+) -> str:
+    """Run a model under two different parameter settings and present both results for comparison.
+
+    Takes model code and two function calls, runs both with print_table=True,
+    and presents the labeled results side by side.
+
+    Args:
+        code: Complete Python script with imports, domains, and @memo functions (no execution code).
+        call_a: First function call, e.g. "anxiety_level(0.0, 5)".
+        call_b: Second function call, e.g. "anxiety_level(1.5, 5)".
+        label_a: Label for first scenario (default "Scenario A").
+        label_b: Label for second scenario (default "Scenario B").
+        timeout: Maximum execution time in seconds (default 30).
+    """
+    def _inject_print_table(call: str) -> str:
+        call = call.strip().rstrip(";")
+        if call.endswith(")"):
+            inner = call[:-1].rstrip()
+            if inner.endswith("("):
+                return inner + "print_table=True)"
+            return inner + ", print_table=True)"
+        return call
+
+    call_a_mod = _inject_print_table(call_a)
+    call_b_mod = _inject_print_table(call_b)
+
+    exec_code = code.rstrip() + "\n\n"
+    exec_code += f'print("=== {label_a} ===")\n'
+    exec_code += f"{call_a_mod}\n"
+    exec_code += f'print()\n'
+    exec_code += f'print("=== {label_b} ===")\n'
+    exec_code += f"{call_b_mod}\n"
+
+    return _run_memo_subprocess(exec_code, timeout)
+
+
+# ===== Tool 10: trace_reasoning ============================================
+
+@mcp.tool()
+def trace_reasoning(code: str, timeout: int = 30) -> str:
+    """Show the step-by-step execution flow of memo functions, revealing the recursive reasoning structure.
+
+    Injects debug_trace=True into @memo decorators and runs the code,
+    exposing function entry/exit, recursion depth, and timing information.
+    This helps explain how recursive multi-agent reasoning unfolds.
+
+    Args:
+        code: Complete Python script with @memo functions and execution code.
+        timeout: Maximum execution time in seconds (default 30).
+    """
+    modified = _inject_trace_flag(code)
+    return _run_memo_subprocess(modified, timeout)
+
+
+def _inject_trace_flag(code: str) -> str:
+    """Replace @memo decorators with @memo(debug_trace=True)."""
+
+    def _replace_memo_with_args(m: re.Match[str]) -> str:
+        args = m.group(1)
+        if "debug_trace" in args:
+            return m.group(0)
+        return f"@memo({args}, debug_trace=True)"
+
+    # Handle @memo with existing args
+    code = re.sub(r"@memo\(([^)]*)\)", _replace_memo_with_args, code)
+    # Handle bare @memo (not followed by '(')
+    code = re.sub(r"@memo\s*\n", "@memo(debug_trace=True)\n", code)
     return code
 
 
