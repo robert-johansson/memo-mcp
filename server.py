@@ -1213,6 +1213,153 @@ def _inject_trace_flag(code: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool 11: critique_memo — validity + idiom + the explainability round-trip
+# ---------------------------------------------------------------------------
+
+_GENERIC_FRAME_NAMES = {
+    "a", "b", "c", "x", "y", "z", "p", "q", "f", "g", "foo", "bar", "tmp",
+    "agent", "agent1", "agent2", "person", "person1", "person2",
+}
+
+_CHOICE_STATEMENTS = {"chooses", "given", "draws", "assigned", "guesses"}
+
+_DECISION_CONSTRUCTS = {"wants", "EU", "to_maximize", "to_minimize"}
+
+
+def _frame_names(node: ast.FunctionDef) -> list[str]:
+    """All agent frame names in a memo function: top-level statements are
+    AnnAssign (`alice: chooses(...)`); inside thinks[...] they parse as Slice
+    nodes (`alice: chooses(...)` becomes Slice(lower=Name, upper=Call))."""
+    names = []
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.AnnAssign) and isinstance(sub.target, ast.Name):
+            names.append(sub.target.id)
+        if isinstance(sub, ast.Slice) and isinstance(sub.lower, ast.Name) \
+                and isinstance(sub.upper, ast.Call):
+            names.append(sub.lower.id)
+    return names
+
+
+def _critique_function(node: ast.FunctionDef) -> list[str]:
+    """Mechanical style checks for one @memo function. Returns finding lines."""
+    findings: list[str] = []
+    name = node.name
+
+    if ast.get_docstring(node) is None:
+        findings.append(
+            f"WARN  {name}: no docstring — state the model's question in domain language"
+        )
+
+    n_lines = (node.end_lineno or node.lineno) - node.lineno + 1
+    if n_lines > 30:
+        findings.append(
+            f"WARN  {name}: {n_lines} lines — one model, one question; "
+            f"consider composing smaller memos (the RSA `L[u, r](t-1)` idiom)"
+        )
+
+    generic = sorted({f for f in _frame_names(node)
+                      if f in _GENERIC_FRAME_NAMES or len(f) == 1})
+    if generic:
+        findings.append(
+            f"WARN  {name}: generic frame name(s) {generic} — "
+            f"frames are roles; name whose mind it is (observer, patient, world, ...)"
+        )
+
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) \
+                and sub.func.id in _CHOICE_STATEMENTS:
+            for kw in sub.keywords:
+                if kw.arg == "wpp" and isinstance(kw.value, ast.Constant) \
+                        and kw.value.value == 1:
+                    findings.append(
+                        f"HINT  {name}: `wpp=1` — write `uniformly` "
+                        f"(same meaning, states the intent)"
+                    )
+
+    hatches = 0
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Set):
+            if len(sub.elts) == 1 and isinstance(sub.elts[0], (ast.Attribute, ast.Constant)):
+                continue  # {Enum.VALUE} / {literal} — the idiomatic reference form
+            hatches += 1
+    if hatches:
+        findings.append(
+            f"NOTE  {name}: {hatches} non-trivial {{...}} escape hatch(es) — "
+            f"sanctioned, but each should carry a one-line justification comment"
+        )
+
+    decision = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call):
+            if isinstance(sub.func, ast.Name) and sub.func.id in _DECISION_CONSTRUCTS:
+                decision.add(sub.func.id)
+            for kw in sub.keywords:
+                if kw.arg in ("to_maximize", "to_minimize"):
+                    decision.add(kw.arg)
+        if isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name) \
+                and sub.value.id == "EU":
+            decision.add("EU")
+    if decision:
+        findings.append(
+            f"NOTE  {name}: decision-theoretic construct(s) {sorted(decision)} — "
+            f"fine if the agent genuinely optimizes; forbidden in utility-free "
+            f"(cybernetic) models of the mind"
+        )
+
+    return findings
+
+
+@mcp.tool()
+def critique_memo(code: str) -> str:
+    """Critique memo code: compile verdict, idiom checks, and the round-trip readback.
+
+    Three passes:
+      1. VERDICT  — does it compile? (memo compilation is a semantic guarantee:
+         the epistemic bookkeeping of who-knows-what is coherent.)
+      2. STYLE    — mechanical idiom checks: docstrings, one-model-one-question
+         size, generic frame names, `wpp=1` vs `uniformly`, escape-hatch
+         quarantine, decision-theoretic constructs.
+      3. READBACK — the plain-English description of the model, for the
+         round-trip test: compare it with the spec you intended to write. If a
+         naive reader would not recover your spec from the readback, the code
+         is valid but not yet idiomatic — usually fixable by renaming frames
+         and choosing more specific statements.
+
+    Args:
+        code: Complete Python script with imports, domains, and @memo functions.
+    """
+    sections = []
+
+    verdict = validate_memo(code)
+    sections.append("## VERDICT\n" + verdict)
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        sections.append(f"## STYLE\n(skipped: syntax error at line {exc.lineno})")
+        return "\n\n".join(sections)
+
+    findings: list[str] = []
+    n_memo = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and _has_memo_decorator(node):
+            n_memo += 1
+            findings.extend(_critique_function(node))
+    if n_memo == 0:
+        findings.append("NOTE  no @memo functions found")
+    sections.append(
+        "## STYLE\n" + ("\n".join(findings) if findings
+                        else f"clean — {n_memo} model(s), no findings")
+    )
+
+    sections.append(
+        "## READBACK (round-trip test: does this match the spec you intended?)\n"
+        + explain_memo(code)
+    )
+    return "\n\n".join(sections)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

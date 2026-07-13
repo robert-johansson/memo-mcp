@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Layout
 
-- **server.py** — The entire MCP server. Defines 10 tools (see below). All tool logic, pattern templates (14 patterns), and handbook parsing live in this single file.
+- **server.py** — The entire MCP server. Defines 11 tools (see below). All tool logic, pattern templates (14 patterns), and handbook parsing live in this single file.
 - **examples.json** — Pre-indexed metadata for ~18 demo programs, used by `search_examples` for keyword matching.
 - **memo/** — Git submodule pointing to `https://github.com/kach/memo`. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 35+ demo files (`memo/demo/`).
 - **venv/** — Python 3.14 virtual environment with jax, mcp, memo-lang, numpy, matplotlib.
@@ -25,6 +25,7 @@ The server communicates over stdio using MCP protocol. It is configured in `.mcp
 
 **Authoring & debugging:**
 - `validate_memo` — compile-check code without executing
+- `critique_memo` — compile verdict + mechanical idiom checks (docstrings, frame naming, `wpp=1` vs `uniformly`, escape-hatch quarantine, decision-theoretic constructs) + the plain-English round-trip readback
 - `run_memo` — execute in an isolated subprocess
 - `inspect_compiled` — show generated JAX code (`debug_print_compiled=True`)
 
