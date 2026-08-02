@@ -185,5 +185,181 @@
     "patterns": ["chooses", "thinks", "observes", "knows", "given", "E", "exp", "to_maximize"],
     "concepts": ["MDP", "Q-value iteration", "inverse planning", "goal inference", "gridworld"],
     "snippet": "from functools import cache\nimport jax\nimport jax.numpy as np\nfrom memo import memo\n\nH = 5\nW = 5\nS = np.arange(H * W)\nG = np.array([0, H * W - 1])\nA_dom = np.array([0, 1, 2, 3])\ncoord_actions = np.array([[-1, 0], [+1, 0], [0, -1], [0, +1]])\nmaze = np.zeros(H * W)\n\n@jax.jit\ndef Tr(s, a, s_):\n    x, y = s % W, s // W\n    next_coords = np.array([x, y]) + coord_actions[a]\n    next_state = (\n        + 1 * np.clip(next_coords[0], 0, W - 1)\n        + W * np.clip(next_coords[1], 0, H - 1)\n    )\n    return (\n        + 1.0 * ((maze[next_state] == 0) & (next_state == s_))\n        + 1.0 * ((maze[next_state] == 1) & (s == s_))\n    )\n\n@jax.jit\ndef R(s, a, g):\n    return 1.0 * (s == g) - 0.1\n\n@jax.jit\ndef is_terminating(s, g):\n    return s == g\n\n@cache\n@memo\ndef Q_mdp[s: S, a: A_dom, g: G](t):\n    alice: knows(s, a, g)\n    alice: given(s_ in S, wpp=Tr(s, a, s_))\n    alice: chooses(a_ in A_dom, to_maximize=0.0 if t < 0 else Q_mdp[s_, a_, g](t - 1))\n    return E[\n        R(s, a, g) + (0.0 if t < 0 else\n                      0.0 if is_terminating(s, g) else\n                      1.0 * Q_mdp[alice.s_, alice.a_, g](t - 1))\n    ]\n\n@memo\ndef invplan[s: S, a: A_dom, g: G](t):\n    observer: knows(a, s, g)\n    observer: thinks[\n        alice: chooses(g in G, wpp=1),\n        alice: knows(s),\n        alice: chooses(a in A_dom, wpp=exp(2 * Q_mdp[s, a, g](t))),\n    ]\n    observer: observes [alice.a] is a\n    return observer[E[alice.g == g]]"
+  },
+  {
+    "name": "memonomicon",
+    "file": "Memonomicon.ipynb",
+    "title": "The Memonomicon (Official Tutorial)",
+    "category": "tutorial",
+    "tags": ["tutorial", "introduction", "getting started", "guide", "learning", "webppl"],
+    "description": "The official introduction to memo, aimed at people already familiar with Bayesian cognitive modeling (e.g. WebPPL). Builds from a single agent choosing a card up through nested recursive reasoning. The only document in the corpus that uses the `cast: [...]` agent declaration.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "given", "imagine", "E", "cast"],
+    "concepts": ["tutorial", "getting started", "cast declaration", "agent modeling", "nested reasoning"],
+    "snippet": "# !pip install memo-lang\n\nimport jax\nimport jax.numpy as np\nfrom memo import memo\n\n@memo\ndef alice_chooses_card():\n    cast: [alice]\n    alice: chooses(c in cards, wpp=1)\n    return E[alice.c]"
+  },
+  {
+    "name": "demo-11-20",
+    "file": "demo-11-20.ipynb",
+    "title": "The 11-20 Money Request Game",
+    "category": "economic_games",
+    "tags": ["level-k", "bounded rationality", "game theory", "money request", "arad rubinstein"],
+    "description": "Level-k reasoning in the 11-20 money request game (Arad & Rubinstein 2012). Each player requests an amount and earns a bonus for requesting exactly one less than the opponent. Reasoning depth is drawn from a Poisson prior, with a salience fallback at depth zero.",
+    "patterns": ["chooses", "thinks", "knows", "given", "wants", "EU", "to_maximize", "Pr"],
+    "concepts": ["level-k reasoning", "bounded rationality", "recursive depth", "poisson prior", "salience"],
+    "snippet": "from memo import memo\nimport jax.numpy as np\nfrom matplotlib import pyplot as plt\nfrom jax.scipy.stats.poisson import pmf as poisson_pmf\n\nfrom typing import no_type_check\n\ndef is_salient(n):\n    return n == 20\n\n@no_type_check\n@memo\ndef game[k: K, n: N](limit=100):\n    player: knows(k)\n    player: wants(payoff=n + (20 if n == opponent.n - 1 else 0))\n    player: thinks[\n        opponent: knows(k),\n        opponent: given(k_ in K, wpp=poisson_pmf(k_, {lambda_}) * (k_ < k)),\n        opponent: chooses(\n            n in N,\n            wpp=1 if limit < 0 else\n            is_salient(n) if k_ <= 0 else\n            game[k_, n](limit - 1)\n        )\n    ]\n    player: chooses(n in N, to_maximize=EU[payoff] if k > 0 else is_salient(n))\n    return Pr[player.n == n]\n\n%time predictions = game()"
+  },
+  {
+    "name": "demo-23",
+    "file": "demo-23.ipynb",
+    "title": "Guess 2/3 of the Average",
+    "category": "economic_games",
+    "tags": ["beauty contest", "keynesian", "level-k", "guessing game", "nagel", "unraveling"],
+    "description": "The classic 2/3-of-the-average guessing game (Nagel 1995). Players iteratively best-respond to their model of other players, producing the unraveling toward zero that is characteristic of level-k reasoning.",
+    "patterns": ["chooses", "guesses", "thinks", "E", "Pr", "exp"],
+    "concepts": ["level-k reasoning", "unraveling", "beauty contest", "iterated best response"],
+    "snippet": "from memo import memo\nimport jax.numpy as np\nimport jax\nfrom matplotlib import pyplot as plt\n\nN = np.arange(100 + 1)  # space of possible guesses\n@memo\ndef player[n: N](level, beta):\n    reader: thinks[\n        everyone_else: chooses(n in N, wpp=player[n](level - 1, beta) if level > 0 else 1)\n    ]\n    reader: chooses(n in N, wpp=exp(beta * -abs(n - (2/3) * E[everyone_else.n])))\n    return Pr[reader.n == n]\n\n# Timing a level-10 player.\n%timeit -r 10 -n 100 out = player(10, 1.0).block_until_ready()"
+  },
+  {
+    "name": "demo-7segment",
+    "file": "demo-7segment.ipynb",
+    "title": "7-Segment Display Font Design",
+    "category": "integration",
+    "tags": ["jax interop", "font design", "ambiguity", "disambiguation", "seven segment", "signaling"],
+    "description": "Designing an unambiguous font for a seven-segment display, chosen to show off memo's interoperability with the wider JAX ecosystem. Some characters collide naively (capital B and 8 both light all seven segments), and the model reasons about which patterns a reader can actually tell apart.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "given", "E", "exp", "cast"],
+    "concepts": ["jax interoperability", "ambiguity avoidance", "signaling", "font design"],
+    "snippet": "import jax\nimport jax.numpy as jnp\nimport numpy as np\nimport jax.scipy as jsp\n\nimport torch\nimport torchvision.datasets\n\nfrom matplotlib import pyplot as plt\n\nimport os\nimport os.path\njax.default_backend()\n\nfeats = []\nlabls = []\n\nfrom collections import Counter\ncnt = Counter()\nfor feat, labl in ds_number:\n    if cnt[labl] > 4800:\n        continue\n    cnt[labl] += 1\n    feats.append(np.array(feat).T)\n    labls.append(labl)\nfor feat, labl in ds_letter:\n    if 1 <= labl <= 26:\n        feats.append(np.array(feat).T)\n        labls.append(labl + 10 - 1)\n\nimport torchvision.transforms.v2 as transforms\n\ntransforms = transforms.Compose([\n    transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),\n    transforms.ToDtype(torch.float32, scale=True),\n])\n\nfrom functools import partial\nfrom typing import Any\nfrom collections.abc import Callable, Sequence\n\nfrom flax import linen as nn\nfrom flax.training import train_state\nimport optax\n\nimport orbax.checkpoint\nfrom flax.training import orbax_utils\n\nNUM_CLASS = 36\n\nModuleDef = Any\nclass ResNetBlock(nn.Module):\n  \"\"\"ResNet block.\"\"\"\n\n  filters: int\n  conv: ModuleDef\n  norm: ModuleDef\n  act: Callable\n  strides: tuple[int, int] = (1, 1)\n\n  @nn.compact\n  def __call__(\n      self,\n      x,\n  ):\n    residual = x\n    y = self.conv(self.filters, (3, 3), self.strides)(x)\n    y = self.norm()(y)\n    y = self.act(y)"
+  },
+  {
+    "name": "demo-broccoli",
+    "file": "demo-broccoli.ipynb",
+    "title": "Diverse Desires: Broccoli and Goldfish",
+    "category": "psychology",
+    "tags": ["developmental", "desires", "theory of mind", "toddlers", "repacholi gopnik", "child variant"],
+    "description": "Repacholi & Gopnik (1997): 14- and 18-month-olds infer an adult's food preference from their emotional reaction, then offer that food rather than their own favourite. A fully worked use of has_theory(CHILD), memo's alternate-theory variant.",
+    "patterns": ["chooses", "thinks", "given", "observes", "such_that", "to_maximize", "has_theory", "Pr"],
+    "concepts": ["diverse desires", "developmental psychology", "child variant", "emotional expression", "preference inference"],
+    "snippet": "from memo import memo\nfrom typing import no_type_check\nfrom enum import IntEnum\n\nclass Treat(IntEnum):\n    BROCCOLI = 0\n    GOLDFISH = 1\n\nclass EmotionExpression(IntEnum):\n    SMILE = 0\n    SCOWL = 1\n\n@no_type_check\n@memo\ndef main[broccoli_ee: EmotionExpression, offered_treat: Treat]():\n    child: has_theory(CHILD)\n    child: thinks[\n        adult: given(preferred_treat in Treat, uniformly),\n        adult: chooses(broccoli_ee in EmotionExpression, such_that=\n            (broccoli_ee == {EmotionExpression.SMILE})\n            if preferred_treat == {Treat.BROCCOLI} else\n            (broccoli_ee == {EmotionExpression.SCOWL})\n        )\n    ]\n    child: observes [adult.broccoli_ee] is broccoli_ee\n    child: chooses(offered_treat in Treat, to_maximize=Pr[offered_treat == adult.preferred_treat])\n    return Pr[child.offered_treat == offered_treat]\n\nmain(print_table=True);"
+  },
+  {
+    "name": "demo-chimp-belief-revision",
+    "file": "demo-chimp-belief-revision.ipynb",
+    "title": "Rational Belief Revision in Chimpanzees",
+    "category": "psychology",
+    "tags": ["comparative cognition", "belief revision", "chimpanzees", "evidence", "schleihauf"],
+    "description": "Models Schleihauf et al. (Science 2025) on whether chimpanzees rationally revise beliefs in light of new evidence. Uses observes_that to condition on boolean propositions rather than on another agent's choice.",
+    "patterns": ["chooses", "thinks", "knows", "given", "observes_that", "wants", "EU", "Pr", "exp"],
+    "concepts": ["belief revision", "comparative cognition", "evidence strength", "rational updating"],
+    "snippet": "from memo import memo\nimport jax.numpy as np\nfrom matplotlib import pyplot as plt\nfrom enum import IntEnum\nfrom jax.scipy.stats.bernoulli import pmf as ber\n\nclass Box(IntEnum):\n    FST_BOX = 0\n    SND_BOX = 1\n\nclass FoodStatus(IntEnum):\n    EMPTY_BOX = 0\n    FOODY_BOX = 1\n\nclass EvidenceType(IntEnum):\n    CRUMBS = 0\n    NOISES = 1\n    VISUAL = 2\n\ndef p_evidence(et, fs):\n    # Probability of \"foody\" evidence given evidence type and food status\n    return np.array([\n        # crumbs\n        [0.5, 0.6],  # very weak evidence\n        # noises\n        [0.3, 0.6],  # moderately weak evidence\n        # visual\n        [0.01, 0.9]   # strong evidence\n    ])[et, fs]\n\n@memo\ndef first_choice[et1: EvidenceType, b: Box]():\n    chimp: knows(et1)\n    chimp: wants(\n        get_food=\n        (world.box1_fs if b=={Box.FST_BOX} else world.box2_fs) == {FoodStatus.FOODY_BOX}\n    )\n    chimp: thinks[\n        world: chooses(box1_fs in FoodStatus, wpp=1),\n        world: chooses(box2_fs in FoodStatus, wpp=1),\n\n        world: knows(et1),\n        world: chooses(e1 in FoodStatus, wpp=ber(e1, p_evidence(et1, box1_fs))),\n    ]\n    chimp: observes_that [world.e1 == {FoodStatus.FOODY_BOX}]\n    chimp: chooses(b in Box, wpp=exp(10.0 * EU[get_food]))\n    return Pr[chimp.b == b]\n\nZ = first_choice(print_table=True);"
+  },
+  {
+    "name": "demo-i-pomdp",
+    "file": "demo-i-pomdp.ipynb",
+    "title": "The Investment Game (I-POMDP)",
+    "category": "economic_games",
+    "tags": ["trust game", "reciprocity", "i-pomdp", "investment", "berg", "gmytrasiewicz"],
+    "description": "The Berg-Dickhaut-McCabe trust and investment game framed as an interactive POMDP (Gmytrasiewicz & Doshi 2005). Investor and trustee reason recursively about each other across rounds.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "imagine", "E", "H", "Pr", "exp"],
+    "concepts": ["i-pomdp", "trust", "reciprocity", "recursive reasoning", "sequential games"],
+    "snippet": "from memo import memo, domain\nimport jax\nimport jax.numpy as np\n\n@jax.jit\ndef reludiff(x, y):\n    return np.maximum(x - y, 0)\n\n@jax.jit\ndef is_init(h):\n    return h == 0\n\n@jax.jit\ndef Tr(r, h, fi, ft, h_):\n    # step game: update h to h_ with moves (fi, ft) at round r\n    z = H._tuple(h)\n    z = np.array(z)\n    z = z.at[r * 2].set(fi)\n    z = z.at[r * 2 + 1].set(ft)\n    return h_ == H(*z)\n\n@memo(cache=True)\ndef hist[ig: G, tg: G, h: H](r, level, beta):\n    # prior over histories h at start of round r >= 1 conditioned on guilts ig, tg\n    world: knows(ig, tg)\n    # start with h at round r - 1\n    world: chooses(h in H, wpp=hist[ig, tg, h](r - 1, level, beta) if r > 1 else is_init(h))\n    # investor and trustee make moves\n    world: chooses(fi in F, wpp=exp(beta * investor[h, ig, fi](r - 1, level, beta)))\n    world: chooses(ft in F, wpp=exp(beta * trustee[h, tg, fi, ft](r - 1, level, beta)))\n    # h gets updated\n    world: chooses(h_ in H, wpp=Tr(r - 1, h, fi, ft, h_))\n    return Pr[world.h_ == h]\n\n\n@memo(cache=True)\ndef investor[h: H, ig: G, fi: F](r, level, beta):\n    # Q-function for investor conditioned on h, own guilt\n    investor: knows(ig)\n    investor: thinks[\n        trustee: knows(ig),\n        trustee: chooses(tg in G, wpp=1),\n        trustee: chooses(h in H, wpp=(hist[ig, tg, h](r, level - 1, beta) if r > 0 and level > 0 else is_init(h)) + 1e-3)\n    ]"
+  },
+  {
+    "name": "demo-lemons",
+    "file": "demo-lemons.ipynb",
+    "title": "The Market for Lemons",
+    "category": "economic_games",
+    "tags": ["adverse selection", "asymmetric information", "akerlof", "market failure", "used cars"],
+    "description": "Akerlof's market for lemons: the seller knows the car's quality and the buyer does not, so adverse selection drives good cars out of the market. Uses wants/EU for the buyer's willingness to pay.",
+    "patterns": ["chooses", "thinks", "knows", "given", "wants", "EU", "to_maximize", "E"],
+    "concepts": ["asymmetric information", "adverse selection", "market failure", "willingness to pay"],
+    "snippet": "from memo import memo\nimport jax.numpy as np\nfrom matplotlib import pyplot as plt\nfrom jax.scipy.stats.bernoulli import pmf as ber\n\nfrom typing import no_type_check\n\nValue = np.linspace(0, 1, 101)\n\n@no_type_check\n@memo\ndef buyer():\n    buyer: wants(payoff=\n        (seller.quality * 1.5 - bid)  # 1.5x true value\n        if seller.sell else 0         # only if transaction happens\n    )\n    buyer: chooses(bid in Value, to_maximize=EU[payoff])\n    buyer: thinks[\n        # The seller knows the quality; the buyer has uniform prior.\n        seller: given(quality in Value, wpp=1),\n        # The seller knows the bid.\n        seller: knows(bid),\n        # The seller sells iff bid >= quality.\n        seller: chooses(sell in Bool, wpp=ber(sell, bid >= quality))\n    ]\n    return E[buyer.bid]\n\nprint(f'The rational buyer bids: ${buyer()}')"
+  },
+  {
+    "name": "demo-mouths-of-babes",
+    "file": "demo-mouths-of-babes.ipynb",
+    "title": "From the Mouths of Babes",
+    "category": "psychology",
+    "tags": ["common ground", "toddlers", "word production", "pragmatics", "informativeness", "schulz"],
+    "description": "Washington et al. (2024): toddlers' early word production favours information already in common ground. Models a child choosing what to say given what the listener is taken to know already.",
+    "patterns": ["chooses", "guesses", "thinks", "knows", "observes", "wants", "EU", "Pr", "exp"],
+    "concepts": ["common ground", "informativeness", "word production", "developmental pragmatics"],
+    "snippet": "from memo import memo\nfrom enum import IntEnum\n\nclass Vocab(IntEnum):\n    Ball = 0\n    Bear = 1\n    Duck = 2\n    Milk = 3\n    Shoe = 4\n\n@memo\ndef novel_event_inform[fixed_event: Vocab, novel_event: Vocab, utterance: Vocab](β):\n    baby: knows(fixed_event, novel_event)\n    baby: wants(inform=Pr[parent.referent_guess == novel_event])\n    baby: thinks[\n        parent: thinks[\n            scene: chooses(fixed_event in Vocab, wpp=1),\n            scene: chooses(novel_event in Vocab, wpp=1)\n        ],\n        parent: observes [scene.fixed_event] is fixed_event,\n        parent: thinks[\n            baby: knows(scene.fixed_event, scene.novel_event),\n            baby: chooses(referent in Vocab, wpp=referent == scene.fixed_event or referent == scene.novel_event),\n            baby: chooses(utterance in Vocab, wpp=(utterance == referent) + 0.25)\n        ]\n    ]\n    baby: chooses(utterance in Vocab, wpp=exp(β * EU[inform]))\n    baby: thinks[\n        parent: observes [baby.utterance] is utterance,\n        parent: guesses(referent_guess in Vocab, wpp=Pr[referent_guess == baby.referent])\n    ]\n    return Pr[baby.utterance == utterance]\n\n@memo\ndef novel_event_connect[fixed_event: Vocab, novel_event: Vocab, utterance: Vocab](β):\n    baby: knows(fixed_event, novel_event)\n    baby: wants(connect=Pr[parent.referent_guess == referent])\n    baby: thinks[\n        parent: thinks["
+  },
+  {
+    "name": "demo-noisy",
+    "file": "demo-noisy.ipynb",
+    "title": "Scalar Implicature from Prosodic Stress",
+    "category": "language",
+    "tags": ["prosody", "stress", "scalar implicature", "rsa", "pragmatics", "noisy channel"],
+    "description": "Why \"I passed the test\" implies you did not ace it, and why prosodic stress on 'passed' strengthens the inference. A Rational Speech Act model with a noisy channel; uses KL divergence.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "given", "imagine", "KL", "Pr", "exp"],
+    "concepts": ["scalar implicature", "prosodic stress", "noisy channel", "rsa", "kl divergence"],
+    "snippet": "from memo import memo\nfrom enum import IntEnum\nimport jax.numpy as np\n\nclass Meaning(IntEnum):\n    Passed = 0\n    Aced = 1\n\nclass Observation(IntEnum):\n    Only_Passed = 0\n    At_Least_Passed = 1\n\nclass Utterance(IntEnum):\n    I_Passed = 0\n    I_Aced = 1\n\nclass Prosody(IntEnum):\n    Unstressed = 0\n    Stressed = 1\n\n@memo\ndef O[m: Meaning, o: Observation]():\n    \"\"\" Generate an observation for the speaker given a true meaning \"\"\"\n    world: knows(m)\n    world: chooses(o in Observation, wpp=o >= m)\n    return Pr[world.o == o]\nO(print_table=True);"
+  },
+  {
+    "name": "demo-pc",
+    "file": "demo-pc.ipynb",
+    "title": "Perturbation Confusion",
+    "category": "language",
+    "tags": ["compiler", "semantics", "webppl comparison", "memo paper", "nested inference"],
+    "description": "Demonstrates the perturbation-confusion problem from Section 1.1.1 of the memo paper, and how memo avoids it. Alice picks indoor or outdoor seating under snow risk; a naive WebPPL implementation of the same problem gets the wrong answer.",
+    "patterns": ["chooses", "imagine", "E", "Pr", "exp"],
+    "concepts": ["perturbation confusion", "nested inference", "language semantics", "webppl comparison"],
+    "snippet": "from memo import memo, domain\nfrom enum import IntEnum\nimport jax\nimport jax.numpy as np\n\nclass Restaurant(IntEnum): Indoor = 0; Outdoor = 1\nclass Weather(IntEnum): Sunny = 0; Stormy = 1\n@jax.jit\ndef utility(r, s):\n    return (np.where(r == Restaurant.Outdoor, 11, 10) +\n            np.where((s == Weather.Stormy) & (r == Restaurant.Outdoor), -100, 0))\n\n@memo\ndef model[r: Restaurant]():\n    alice: chooses(r in Restaurant, wpp=imagine[\n        world: chooses(s in Weather, wpp=0.5),\n        exp(E[utility(r, world.s)])\n    ])\n    return Pr[alice.r == r]\n\nfor r in Restaurant:\n    print(f'P({r.name}) = {model()[r]}')"
+  },
+  {
+    "name": "demo-persuasion",
+    "file": "demo-persuasion.ipynb",
+    "title": "Bayesian Persuasion",
+    "category": "economic_games",
+    "tags": ["persuasion", "information design", "signaling", "kamenica gentzkow", "prosecutor", "judge"],
+    "description": "Kamenica & Gentzkow (2011): a prosecutor designs an evidence-revealing policy to maximise the chance of conviction, facing a Bayesian judge. The canonical information-design problem.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "to_maximize", "Pr", "exp"],
+    "concepts": ["information design", "persuasion", "commitment", "signaling policy"],
+    "snippet": "from memo import memo, domain\nimport jax.numpy as np\nimport jax\nfrom enum import IntEnum\nfrom matplotlib import pyplot as plt\n\nclass State(IntEnum):\n    Innocent = 0\n    Guilty = 1\n\nclass Result(IntEnum):\n    Exonerating = 0\n    Incriminating = 1\n\nclass Verdict(IntEnum):\n    Acquit = 0\n    Convict = 1\n\nProbability = np.linspace(0.5, 1, 100 + 1)\nTest = domain(pi_i=len(Probability), pi_g=len(Probability))\n\n@jax.jit\ndef run_test(r, s, t):\n    p_i, p_g = Test._tuple(t)\n    p_i = Probability[p_i]\n    p_g = Probability[p_g]\n    return np.array([\n        [p_i, 1 - p_i],\n        [1 - p_g, p_g]\n    ])[s, r]\n\n@memo\ndef prosecutor[t: Test](level):\n    # prosecutor maximizes p(judge convicts)\n    pros: chooses(t in Test, wpp=exp(20 * judge[t](level)))\n    return Pr[pros.t == t]\n\n@memo\ndef judge[t: Test](level):\n    judge: thinks[\n        defendant: chooses(s in State, wpp=0.7 if s == 0 else 0.3),\n        prosecutor: chooses(t in Test, wpp=prosecutor[t](level - 1) if level > 0 else 1),\n        defendant: knows(prosecutor.t),\n        defendant: chooses(r in Result, wpp=run_test(r, s, prosecutor.t))\n    ]\n\n    defendant: chooses(s in State, wpp=0.7 if s == 0 else 0.3)\n    defendant: knows(t)\n    defendant: chooses(r in Result, wpp=run_test(r, s, t))\n\n    judge: observes [prosecutor.t] is t\n    judge: observes [defendant.r] is defendant.r"
+  },
+  {
+    "name": "demo-physics",
+    "file": "demo-physics.ipynb",
+    "title": "Intuitive Psychology Meets Intuitive Physics",
+    "category": "psychology",
+    "tags": ["intuitive physics", "intuitive psychology", "dsl interop", "api", "liu outa akbiyik"],
+    "description": "Liu, Outa & Akbiyik (2024): how intuitive psychology and intuitive physics interoperate, framed as an API between two domain-specific languages. Shows memo calling out to a physics simulation.",
+    "patterns": ["chooses", "thinks", "observes", "given", "Pr", "exp"],
+    "concepts": ["intuitive physics", "dsl interoperation", "naive psychology", "simulation"],
+    "snippet": "# memo, our psychology DSL\nfrom memo import memo\nimport jax\nimport jax.numpy as np\nfrom matplotlib import pyplot as plt\n\n# jax2d, our physics DSL\nfrom jax2d.engine import PhysicsEngine, create_empty_sim\nfrom jax2d.scene import (add_circle_to_scene, add_rectangle_to_scene, add_thruster_to_scene)\nfrom jax2d.sim_state import StaticSimParams, SimParams\n\n# Declare data types used in this model\nAngle = np.linspace(0, np.pi / 2, 25)\nImpulse = np.linspace(0, 1.5, 25)\nWeight = np.linspace(0, 2, 5)\nWall = np.array([0, 1])\n\n@memo\ndef model[theta: Angle, iota: Impulse]():\n    baby: thinks[\n        agent: given(wall in Wall, wpp=1),  # agent sees wall, hidden from baby\n        agent: given(weight in Weight, wpp=1),  # agent has utility weight\n        agent: chooses(  # agent chooses action\n            theta in Angle, iota in Impulse,\n            # The agent is softmax-optimal wrt the utility we defined.\n            # Here, we make a call to `utility`, which in turn simulates\n            # physics via jax2d.\n            wpp=exp(3.0 * utility(theta, iota, wall, weight))\n        )\n    ]\n\n    # baby makes an inference about wall after observing agent's action\n    baby: observes [agent.theta] is theta\n    baby: observes [agent.iota] is iota\n    return baby[Pr[agent.wall == 1]]"
+  },
+  {
+    "name": "demo-politeness",
+    "file": "demo-politeness.ipynb",
+    "title": "Politeness",
+    "category": "language",
+    "tags": ["politeness", "social goals", "face", "rsa", "pragmatics", "yoon"],
+    "description": "Yoon et al. (2020): polite speech emerging from competing informational and social goals. A speaker trades off being truthful against making the listener feel good.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "given", "imagine", "wants", "EU", "E", "Pr", "exp"],
+    "concepts": ["politeness", "competing goals", "social utility", "face saving", "rsa"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum, auto\n\nS = np.arange(4)  # true world states (number of hearts)\n\nclass W(IntEnum):  # possible utterances\n    terrible = auto(0)\n    not_amazing = auto()\n    not_terrible = auto()\n    amazing = auto()\n\n@memo\ndef S1[s: S, w: W](alpha, phi):\n    speaker: knows(s)\n    speaker: thinks[\n        listener: thinks[\n            speaker: given(s in S, wpp=state_prior(s)),\n            speaker: chooses(w in W, wpp=L(w, s))\n        ]\n    ]\n    speaker: chooses(w in W, wpp=exp(alpha * imagine[\n        listener: observes [speaker.w] is w,\n        listener: knows(s),\n        (\n            phi * listener[ log(Pr[speaker.s == s]) ] +  # U_inf = listener's surprisal\n            (1 - phi) * listener[ E[ V(speaker.s) ] ]    # U_soc = listener's EU\n        )\n    ]))\n    return Pr[speaker.w == w]"
+  },
+  {
+    "name": "demo-takeaway",
+    "file": "demo-takeaway.ipynb",
+    "title": "1-2 Takeaway (Inferring Expertise)",
+    "category": "puzzles",
+    "tags": ["combinatorial game", "expertise", "opponent modeling", "matchsticks", "optimal play"],
+    "description": "In 1-2 Takeaway two players remove one or two matchsticks and the winner takes the last. There is a winning trick: always leave a multiple of three. The model infers from play whether your opponent knows the trick.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "imagine", "wants", "EU", "E", "Pr", "exp"],
+    "concepts": ["opponent modeling", "expertise inference", "combinatorial game", "optimal play"],
+    "snippet": "from memo import memo\nimport jax\nimport jax.numpy as np\nfrom enum import IntEnum\nfrom functools import cache\nfrom matplotlib import pyplot as plt\n\nN = np.arange(21)\nclass Move(IntEnum):\n    ONE = 1\n    TWO = 2\n\n@cache\n@memo\ndef EU[n: N](t):\n    player: knows(n)\n    return (\n        -1 if n == 0 else\n        0 if t <= 0 else\n        imagine[\n            player: chooses(m in Move, wpp=(n >= m) * π[n, m](t)),\n            player: chooses(n_ in N, wpp=n_ == n-m),\n            -E[EU[player.n_](t - 1)]\n        ]\n    )\n\n@cache\n@memo\ndef π[n: N, m: Move](t):\n    player: knows(n)\n    player: chooses(m in Move, wpp=(n >= m) * exp(10 * (0 if t <= 0 else imagine[\n        env: knows(n, m),\n        env: chooses(n_ in N, wpp=n_ == n-m),\n        -E[EU[env.n_](t - 1)]\n    ])))\n    return Pr[player.m == m]"
+  },
+  {
+    "name": "demo-trucks",
+    "file": "demo-trucks.ipynb",
+    "title": "Food Trucks (Belief-Desire-Percept Attribution)",
+    "category": "psychology",
+    "tags": ["bayesian theory of mind", "joint inference", "occlusion", "baker saxe tenenbaum", "food trucks"],
+    "description": "Baker, Jara-Ettinger, Saxe & Tenenbaum (2017): jointly attributing beliefs, desires and percepts from a single observed trajectory. A hungry grad student walks around a wall, then turns back to the visible truck. Uses snapshots_self_as and observes_that.",
+    "patterns": ["chooses", "thinks", "knows", "observes", "observes_that", "given", "imagine", "snapshots_self_as", "to_maximize", "E", "H", "Pr", "exp"],
+    "concepts": ["belief desire percept attribution", "joint inference", "occlusion", "bayesian theory of mind"],
+    "snippet": "import jax\nimport jax.numpy as np\nfrom memo import memo, domain\nfrom enum import IntEnum\nimport matplotlib.pyplot as plt\nfrom tqdm.notebook import tqdm\nfrom ipywidgets import interact\n\nclass A(IntEnum):\n    LEFT = 0\n    RIGHT = 1\n    UP = 2\n    DOWN = 3\n    NOP = 4\n\ncoord_actions = np.array([[-1, 0], [+1, 0], [0, -1], [0, +1], [0, 0]])\n\n@jax.jit\ndef Tr(s, a, s_):\n    x, y = S._tuple(s)\n    next_coords = np.array([x, y]) + coord_actions[a]\n    next_state = S(\n        np.clip(next_coords[0], 0, W - 1),\n        np.clip(next_coords[1], 0, H - 1)\n    )\n    return (\n        + 1.0 * ((maze[next_state] == 0) & (next_state == s_))  # next state free, can move there\n        + 1.0 * ((maze[next_state] == 1) & (s == s_)) # next state occupied, stay where you are\n    )\n\nUtility = np.array([-20, 0, 50, 100])\nG = domain(uK=len(Utility), uL=len(Utility), uM=len(Utility))\n\nclass D(IntEnum):\n    L_PARKED = 0\n    M_PARKED = 1\n\n@jax.jit\ndef R(d, s, g):\n    uK, uL, uM = G._tuple(g)\n    return np.select([\n        s == SPOT_Y_LOC,\n        (s == SPOT_X_LOC) & (d == D.L_PARKED),\n        (s == SPOT_X_LOC) & (d == D.M_PARKED)\n    ], [ Utility[uK], Utility[uL], Utility[uM] ], default=0)\n\n@jax.jit\ndef cost(a):\n    return 1 * (a != A.NOP)\n\ngamma = 0.99\nbeta = 2.5\n\n@memo(cache=True)\ndef Q_mdp[d: D, s: S, a: A, g: G](t):\n    alice: knows(d, s, a, g)\n    alice: given(s_ in S, wpp=Tr(s, a, s_))"
   }
 ]
