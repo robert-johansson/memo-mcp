@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Layout
 
-- **server.py** — The entire MCP server. Defines 11 tools (see below). All tool logic, pattern templates (14 patterns), and handbook parsing live in this single file.
-- **examples.json** — Pre-indexed metadata for ~18 demo programs, used by `search_examples` for keyword matching.
-- **memo/** — Git submodule pointing to `https://github.com/kach/memo`. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 35+ demo files (`memo/demo/`).
+- **server.py** — The entire MCP server. Defines 11 tools (see below). All tool logic, pattern templates (15 patterns), and handbook parsing live in this single file.
+- **examples.json** — Pre-indexed metadata for demo programs, used by `search_examples` for keyword matching. Covers all 33 memo demos in `memo/demo/`; the only `.py` file there it deliberately skips is `test.py` (memo's own test suite), and the two `.wppl` files are WebPPL reference ports, not memo.
+- **memo/** — Git submodule pointing to `https://github.com/kach/memo`. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 33 demo files (`memo/demo/`).
 - **venv/** — Python 3.14 virtual environment with jax, mcp, memo-lang, numpy, matplotlib.
 
 ## Running the Server
@@ -31,8 +31,8 @@ The server communicates over stdio using MCP protocol. It is configured in `.mcp
 
 **Reference & examples:**
 - `get_handbook` — return memo DSL docs by section (anatomy, statements, expressions, running)
-- `list_patterns` — browse 14 design pattern templates
-- `search_examples` — keyword search across ~18 indexed demos
+- `list_patterns` — browse 15 design pattern templates
+- `search_examples` — keyword search across the 33 indexed demos (top 5 hits); call with `query=""` to browse the whole index grouped by category
 
 **Accessibility (explaining models to lay audiences):**
 - `explain_memo` — static AST analysis producing plain-English model summary (agents, beliefs, choices, recursive structure)
@@ -42,7 +42,11 @@ The server communicates over stdio using MCP protocol. It is configured in `.mcp
 
 ## Architecture
 
-The server uses `mcp.server.fastmcp.FastMCP` to register tools. Key design decisions:
+The server registers tools with the MCP SDK's decorator-based server class, imported
+compatibly across SDK versions: 2.x exposes it as `mcp.server.mcpserver.MCPServer`,
+1.x as `mcp.server.fastmcp.FastMCP`. `server.py` tries the 2.x path first and falls
+back, aliasing either to the name `FastMCP`. The `.tool()` and `.run()` APIs are
+identical across both. Key design decisions:
 
 - **Subprocess isolation for execution**: `_run_memo_subprocess` is a shared helper that spawns `venv/bin/python` in a subprocess to prevent JAX OOM or hangs from crashing the server. Used by `run_memo`, `narrate_results`, `compare_scenarios`, and `trace_reasoning`. `validate_memo` uses in-process `importlib` (compile-only, no execution).
 - **Static analysis**: `explain_memo` uses Python's `ast` module to parse memo code without execution, extracting agents, statements, domains, recursive structure, and docstrings. Inside `thinks[...]` blocks, Python parses `agent: stmt` as `Slice` nodes (not `AnnAssign`).

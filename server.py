@@ -14,7 +14,10 @@ from io import StringIO
 from pathlib import Path
 from contextlib import redirect_stdout
 
-from mcp.server.fastmcp import FastMCP
+try:  # MCP SDK >= 2.0 renamed FastMCP to MCPServer
+    from mcp.server.mcpserver import MCPServer as FastMCP
+except ImportError:  # MCP SDK 1.x
+    from mcp.server.fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -189,18 +192,35 @@ def run_memo(code: str, timeout: int = 30) -> str:
 # ===== Tool 3: search_examples ============================================
 
 @mcp.tool()
-def search_examples(query: str) -> str:
-    """Find relevant memo demo patterns by keyword search.
+def search_examples(query: str = "") -> str:
+    """Find relevant memo demo patterns by keyword search, or browse the full index.
 
     Searches the example index by word overlap across tags, title,
     description, patterns, and concepts. Returns top 5 matches.
 
     Args:
         query: Natural language query, e.g. "bayesian belief update", "game theory", "POMDP".
+            Pass "" to list every indexed demo (titles and descriptions, no code).
     """
     examples = _load_examples()
     if not examples:
         return "No examples index found."
+
+    # Browse mode. Search caps at 5 hits, so without this there is no way to
+    # discover a demo whose vocabulary you cannot already guess.
+    if not query.strip():
+        by_category: dict[str, list[dict]] = {}
+        for ex in examples:
+            by_category.setdefault(ex.get("category", "uncategorized"), []).append(ex)
+
+        parts = [f"# memo demos ({len(examples)} indexed)\n"]
+        for category in sorted(by_category):
+            parts.append(f"## {category}")
+            for ex in sorted(by_category[category], key=lambda e: e["title"]):
+                parts.append(f"- **{ex['title']}** ({ex['file']}) — {ex.get('description', '')}")
+            parts.append("")
+        parts.append("Use search_examples(query='<terms>') to get full code for the top matches.")
+        return "\n".join(parts)
 
     query_words = set(query.lower().split())
 

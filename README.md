@@ -9,21 +9,23 @@ memo is a DSL that compiles recursive multi-agent reasoning models to JAX array 
 | Tool | Purpose |
 |------|---------|
 | `validate_memo` | Compile-check memo code without executing it |
+| `critique_memo` | Compile verdict, idiom checks, and a plain-English round-trip readback |
 | `run_memo` | Execute memo code in an isolated subprocess |
 | `explain_memo` | Static analysis producing a plain-English model summary (agents, beliefs, choices, recursive structure) |
 | `narrate_results` | Run a memo function and return a labeled table with domain value names |
 | `compare_scenarios` | Run two parameter settings side-by-side for comparison |
 | `trace_reasoning` | Show the recursive execution flow (entry/exit, depth, timing) |
 | `inspect_compiled` | Show the generated JAX code for debugging |
-| `search_examples` | Keyword search across ~18 indexed demo programs |
+| `search_examples` | Keyword search across the 33 indexed demo programs, or `""` to browse them all |
 | `get_handbook` | Return memo DSL reference documentation |
-| `list_patterns` | Browse 14 common design pattern templates |
+| `list_patterns` | Browse 15 common design pattern templates |
 
 ## Installation
 
 Install memo-mcp once in a convenient location. It runs as a standalone service — your projects reference it via config, they don't need to embed it.
 
-Requires Python 3.12+ (tested with 3.14).
+Requires Python 3.12+ (tested with 3.14). Works with either MCP SDK 1.x or 2.x —
+2.0 renamed `FastMCP` to `MCPServer`, and the server imports whichever is present.
 
 ```bash
 # Pick a location, e.g. ~/tools
@@ -68,9 +70,9 @@ venv/bin/python server.py
 ## Repository layout
 
 ```
-server.py        -- MCP server (all 10 tools)
-examples.json    -- Search index for demo programs
-memo/            -- Git submodule: the memo DSL, Handbook, and 35+ demos
+server.py        -- MCP server (all 11 tools)
+examples.json    -- Search index covering all 33 demo programs
+memo/            -- Git submodule: the memo DSL, Handbook, and demos
 ```
 
 ## Links
