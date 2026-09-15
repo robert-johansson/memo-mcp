@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository Layout
 
 - **server.py** — The entire MCP server. Defines 11 tools (see below). All tool logic, pattern templates (15 patterns), and handbook parsing live in this single file.
-- **examples.json** — Pre-indexed metadata for demo programs, used by `search_examples` for keyword matching. Covers all 33 memo demos in `memo/demo/`; the only `.py` file there it deliberately skips is `test.py` (memo's own test suite), and the two `.wppl` files are WebPPL reference ports, not memo.
-- **memo/** — Git submodule pointing to `https://github.com/kach/memo`. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 33 demo files (`memo/demo/`).
+- **examples.json** — Pre-indexed metadata for demo programs, used by `search_examples` for keyword matching. Covers all 35 memo demos in `memo/demo/`; the only `.py` file there it deliberately skips is `test.py` (memo's own test suite), and the two `.wppl` files are WebPPL reference ports, not memo.
+- **memo/** — Git submodule pointing to `https://github.com/kach/memo`. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 35 demo files (`memo/demo/`).
 - **venv/** — Python 3.14 virtual environment with jax, mcp, memo-lang, numpy, matplotlib.
 
 ## Running the Server
@@ -32,7 +32,7 @@ The server communicates over stdio using MCP protocol. It is configured in `.mcp
 **Reference & examples:**
 - `get_handbook` — return memo DSL docs by section (anatomy, statements, expressions, running)
 - `list_patterns` — browse 15 design pattern templates
-- `search_examples` — keyword search across the 33 indexed demos (top 5 hits); call with `query=""` to browse the whole index grouped by category
+- `search_examples` — keyword search across the 35 indexed demos (top 5 hits); call with `query=""` to browse the whole index grouped by category
 
 **Accessibility (explaining models to lay audiences):**
 - `explain_memo` — static AST analysis producing plain-English model summary (agents, beliefs, choices, recursive structure)

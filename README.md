@@ -16,7 +16,7 @@ memo is a DSL that compiles recursive multi-agent reasoning models to JAX array 
 | `compare_scenarios` | Run two parameter settings side-by-side for comparison |
 | `trace_reasoning` | Show the recursive execution flow (entry/exit, depth, timing) |
 | `inspect_compiled` | Show the generated JAX code for debugging |
-| `search_examples` | Keyword search across the 33 indexed demo programs, or `""` to browse them all |
+| `search_examples` | Keyword search across the 35 indexed demo programs, or `""` to browse them all |
 | `get_handbook` | Return memo DSL reference documentation |
 | `list_patterns` | Browse 15 common design pattern templates |
 
@@ -71,7 +71,7 @@ venv/bin/python server.py
 
 ```
 server.py        -- MCP server (all 11 tools)
-examples.json    -- Search index covering all 33 demo programs
+examples.json    -- Search index covering all 35 demo programs
 memo/            -- Git submodule: the memo DSL, Handbook, and demos
 ```
 
