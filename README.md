@@ -8,7 +8,7 @@ memo is a DSL that compiles recursive multi-agent reasoning models to JAX array 
 
 | Tool | Purpose |
 |------|---------|
-| `validate_memo` | Compile-check memo code without executing it |
+| `validate_memo` | Compile-check memo code and report memo's compile-time warnings |
 | `critique_memo` | Compile verdict, idiom checks, and a plain-English round-trip readback |
 | `run_memo` | Execute memo code in an isolated subprocess |
 | `explain_memo` | Static analysis producing a plain-English model summary (agents, beliefs, choices, recursive structure) |
@@ -17,8 +17,8 @@ memo is a DSL that compiles recursive multi-agent reasoning models to JAX array 
 | `trace_reasoning` | Show the recursive execution flow (entry/exit, depth, timing) |
 | `inspect_compiled` | Show the generated JAX code for debugging |
 | `search_examples` | Keyword search across the 36 indexed demo programs, or `""` to browse them all |
-| `get_handbook` | Return memo DSL reference documentation |
-| `list_patterns` | Browse 15 common design pattern templates |
+| `get_handbook` | Return the memo Handbook: whole, by part, or by any heading (`to_be`, `forgets_about`, `cost`, ...) |
+| `list_patterns` | Browse 23 design pattern templates, each a complete script that runs as-is |
 
 ## Installation
 
@@ -40,6 +40,13 @@ If you already cloned without `--recurse-submodules`:
 
 ```bash
 git submodule update --init
+```
+
+Check the installation (memo parity, every pattern template, the demo index,
+the Handbook lookup, and the stdio transport), in about 5 seconds:
+
+```bash
+venv/bin/python test_server.py
 ```
 
 ## Usage with Claude Code
@@ -72,6 +79,7 @@ venv/bin/python server.py
 ```
 server.py        -- MCP server (all 11 tools)
 examples.json    -- Search index covering all 36 demo programs
+test_server.py   -- Regression checks (run with venv/bin/python)
 memo/            -- Git submodule: the memo DSL, Handbook, and demos (pinned to v1.3.2)
 ```
 
