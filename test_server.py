@@ -89,6 +89,24 @@ print("VALUE", float(f()))
     check("var_redundant_known_is_zero", "VALUE 0.0" in out, out)
 
 
+def test_snapshot_keeps_its_values() -> None:
+    # memo >= 1.3.3: a snapshot is unaffected by its owner's later observation
+    # (kach/memo issue 126); 1.3.2 gave [0. 1. 2.].
+    out = server.run_memo("""\
+from memo import memo
+import jax.numpy as np
+X = np.arange(3)
+@memo
+def f[x: X]():
+    alice: thinks[ bob: chooses(x in X, wpp=1) ]
+    alice: snapshots_self_as(past_alice)
+    alice: observes [bob.x] is x
+    return alice[past_alice[E[bob.x]]]
+print("VALUE", np.broadcast_to(f(), (3,)).tolist())
+""")
+    check("snapshot_unaffected_by_later_observe", "VALUE [1.0, 1.0, 1.0]" in out, out)
+
+
 # --- patterns --------------------------------------------------------------
 
 def _run_template(item: tuple[str, dict]) -> tuple[str, int, str]:
@@ -343,6 +361,7 @@ if __name__ == "__main__":
     test_is_operator_error()
     test_cost_metrics()
     test_var_redundant_known()
+    test_snapshot_keeps_its_values()
     test_patterns_run()
     test_patterns_style()
     test_pattern_docstring_lists_all()

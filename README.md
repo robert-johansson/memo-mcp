@@ -80,7 +80,7 @@ venv/bin/python server.py
 server.py        -- MCP server (all 11 tools)
 examples.json    -- Search index covering all 36 demo programs
 test_server.py   -- Regression checks (run with venv/bin/python)
-memo/            -- Git submodule: the memo DSL, Handbook, and demos (pinned to v1.3.2)
+memo/            -- Git submodule: the memo DSL, Handbook, and demos (pinned to v1.3.3)
 ```
 
 ## Links

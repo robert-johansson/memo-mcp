@@ -10,17 +10,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **server.py** — The entire MCP server. Defines 11 tools (see below). All tool logic, pattern templates (23 patterns), and handbook parsing live in this single file.
 - **examples.json** — Pre-indexed metadata for demo programs, used by `search_examples` for keyword matching. Covers all 36 memo demos in `memo/demo/`; the only `.py` file there it deliberately skips is `test.py` (memo's own test suite), and the two `.wppl` files are WebPPL reference ports, not memo.
-- **memo/** — Git submodule pointing to `https://github.com/kach/memo`, pinned to v1.3.2. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 36 demo files (`memo/demo/`).
+- **memo/** — Git submodule pointing to `https://github.com/kach/memo`, pinned to v1.3.3. Contains the core DSL (`memo/memo/`), the Handbook reference (`memo/Handbook.md`), and 36 demo files (`memo/demo/`).
 - **test_server.py** — Regression checks: memo-version-specific syntax, every pattern template runs as-is and passes the critique style checks, the index covers every demo, every Handbook heading is reachable, `explain_memo` knows every statement form, and the stdio stream stays pure JSON-RPC when user code prints. Run `venv/bin/python test_server.py` after any change.
 - **venv/** — Python 3.14 virtual environment with jax, mcp, memo-lang, numpy, matplotlib.
 
 ## Bumping memo
 
 1. `git -C memo fetch --tags && git -C memo checkout vX.Y.Z`
-2. Run memo's own suite against the venv: `cd memo/demo && PYTHONPATH=.. ../../venv/bin/python test.py` (every line must be `[ pass ... ]`).
-3. `git -C memo diff OLD NEW -- memo/ Handbook.md demo/` for new syntax: teach `explain_memo` new statements, add a pattern for each new construct, and add `_HEADING_ALIASES` entries for Handbook keywords that are not in a heading.
-4. Index new demos in `examples.json` (`test_server.py` fails on an unindexed demo).
-5. `venv/bin/python test_server.py`, then update the version and counts in this file and README.md.
+2. `venv/bin/pip install --no-deps memo-lang==X.Y.Z`: the server and its subprocesses import the submodule, which shadows the venv's own copy, but keep that copy at the same release.
+3. Run memo's own suite against the venv: `cd memo/demo && PYTHONPATH=.. ../../venv/bin/python test.py` (every line must be `[ pass ... ]`).
+4. `git -C memo diff OLD NEW -- memo/ Handbook.md demo/` for new syntax: teach `explain_memo` new statements, add a pattern for each new construct, and add `_HEADING_ALIASES` entries for Handbook keywords that are not in a heading.
+5. Index new demos in `examples.json` (`test_server.py` fails on an unindexed demo).
+6. `venv/bin/python test_server.py`, then update the version and counts in this file and README.md.
 
 ## Running the Server
 
