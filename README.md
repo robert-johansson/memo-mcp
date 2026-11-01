@@ -87,3 +87,9 @@ memo/            -- Git submodule: the memo DSL, Handbook, and demos (pinned to 
 
 - [memo](https://github.com/kach/memo) -- the underlying DSL
 - [MCP specification](https://modelcontextprotocol.io)
+
+## License
+
+MIT (`LICENSE`), Copyright (c) 2026 Robert Johansson. The `memo/` submodule
+is [memo](https://github.com/kach/memo), under its own MIT License,
+Copyright (c) 2024-2025 Kartik Chandra and Tony Chen.
